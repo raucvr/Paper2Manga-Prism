@@ -22,6 +22,7 @@ from typing import Iterable, NamedTuple, Union
 
 from services.boards import _prep, _scan, board_numbers, board_texts, find_numbers, normalize_board
 from services.ledger import ledger_of
+from services.paper_figures import without_figures
 
 _QUOTES = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'", "\u00b4": "'", "`": "'",
                          "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u2033": '"'})
@@ -90,7 +91,9 @@ class _Paper:
 
 @lru_cache(maxsize=4)
 def _paper(text: str) -> _Paper:
-    return _Paper(text)
+    """The paper as evidence: its own text, never the figures section (services.paper_figures), a vision model's reading
+    whose values read off an axis must never pass as the paper's numbers."""
+    return _Paper(without_figures(text))
 
 
 def _quote_keys(paper: _Paper, quote: str) -> tuple[bool, frozenset]:
@@ -224,9 +227,14 @@ def verify_board(spec, paper_text: str) -> list[str]:
                             f"and no paper line shows {n.text} {beside}. Copy the value character for character "
                             f"from the paper with a verbatim quote of its table row or sentence, or drop it.")
     # every other drawn text, bare numbers included ("+2.04" on a list is not translatable, but a reader sees it);
-    # the tokens of an illustrative links board are the running example's own words
+    # the tokens of an illustrative links board are the running example's own words, and a diagram's labels are its
+    # designer's: StoryboarderV2 checks them when it designs (a made-up example's numbers allowed) and drops what is
+    # still unsupported at the end. Here they made a whole drawing invalid over one label the writer cannot edit, and
+    # the diagram became a scene (round 23's review)
     illustrative = board["kind"] == "links" and board.get("illustrative", True)
-    texts = [(p, t) for p, t in board_texts(board) if p not in data_paths and not (illustrative and p.startswith("tokens."))]
+    drawn = board["kind"] == "diagram"
+    texts = [(p, t) for p, t in board_texts(board) if p not in data_paths and not (illustrative and p.startswith("tokens."))
+             and not (drawn and p.startswith("elements."))]
     for path, text in texts:
         for n in find_numbers(text):
             if magnitude and n.key == _scaled_key("1", magnitude):   # the chart's stated scale ("x10^6 steps")

@@ -67,6 +67,7 @@ class Grounding:
     text_found: list = field(default_factory=list)
     extras: list = field(default_factory=list)
     matches: dict[str, bool] = field(default_factory=dict)
+    objects: list = field(default_factory=list)          # boxes of the objects that carry a scene's idea
 
 
 def _lang(language: str) -> str:
@@ -903,6 +904,7 @@ class _Ctx:
     heads: dict[str, Rect]
     quad: Optional[list[tuple[float, float]]] = None
     shapes_cache: dict = field(default_factory=dict)
+    objects: list = field(default_factory=list)   # boxes of the objects that carry a scene's idea (kept clear when the words fit)
 
     def __post_init__(self):
         self.lang = _lang(self.language)
@@ -1144,10 +1146,20 @@ def _tails(ctx: _Ctx, placed: Sequence[PlacedBubble], bodies: Sequence[list], bl
                     break
             if found:
                 break
+        if found and not _tail_reaches(head, found, s):
+            tip = found[2]
+            if any(_rect_gap(h, tip) <= 30 * s for name, h in ctx.heads.items() if name != p.speaker):
+                found = None   # cut short at another head, the stub points at that character; the name tab says who speaks
         out.append(found)
         if found:
             drawn.append(found[0])
     return out
+
+
+def _rect_gap(rect: Rect, pt: tuple[float, float]) -> float:
+    """Distance from a point to a box (0 inside it)."""
+    x1, y1, x2, y2 = rect
+    return math.hypot(max(x1 - pt[0], 0.0, pt[0] - x2), max(y1 - pt[1], 0.0, pt[1] - y2))
 
 
 def _hits(mask: np.ndarray, poly: Sequence[tuple[float, float]], stroke: float) -> bool:
@@ -1170,10 +1182,7 @@ def _tail_reaches(head: Optional[Rect], tail, s: float) -> bool:
     """Does the tail end at (or close to) the speaker's head? A stub that stops at a board does not."""
     if not head or not tail:
         return False
-    tx, ty = tail[2]
-    x1, y1, x2, y2 = head
-    gap = math.hypot(max(x1 - tx, 0.0, tx - x2), max(y1 - ty, 0.0, ty - y2))
-    return gap <= max(70 * s, 0.6 * (y2 - y1))
+    return _rect_gap(head, tail[2]) <= max(70 * s, 0.6 * (head[3] - head[1]))
 
 
 def _speaker_chip(img: Image.Image, p: PlacedBubble, ctx: _Ctx, avoid: Sequence[Rect] = ()) -> Rect:
@@ -1289,6 +1298,25 @@ def _scaled_grounding(g: Optional[Grounding], W: int, H: int):
     return heads, quad
 
 
+def _scaled_boxes(boxes, g: Optional[Grounding], W: int, H: int) -> list[Rect]:
+    """Boxes made on the grounding's art size, in this art's pixels (clamped; degenerate ones dropped)."""
+    gw, gh = (g.size or (0, 0))[:2] if g is not None and g.size else (0, 0)
+    sx, sy = (W / gw, H / gh) if gw and gh else (1.0, 1.0)
+    out = []
+    for box in boxes or []:
+        try:
+            x1, y1, x2, y2 = (float(v) for v in box)
+        except (TypeError, ValueError):
+            continue
+        if not all(map(math.isfinite, (x1, y1, x2, y2))):
+            continue
+        x1, x2 = sorted((max(0.0, x1 * sx), min(float(W), x2 * sx)))
+        y1, y2 = sorted((max(0.0, y1 * sy), min(float(H), y2 * sy)))
+        if x2 - x1 >= 4 and y2 - y1 >= 4:
+            out.append((x1, y1, x2, y2))
+    return out
+
+
 def _place_narration(ctx: _Ctx, text: str, boxes: Sequence[Rect], max_h: float, avoid: Sequence[Rect]) -> Optional[NarrationBox]:
     """First box (in order) where the narration fits at some size without touching `avoid` (heads, chart)."""
     for box in boxes:
@@ -1321,9 +1349,52 @@ def _below(nb: Optional[NarrationBox], band: Rect, s: float) -> Rect:
     return (band[0], nb.rect[3] + 14 * s, band[2], max(band[3], nb.rect[3] + 140 * s))
 
 
+BIG_OBJECT = 0.12   # share of the art from which an idea object still reads with its edges under a bubble
+GIANT_OBJECT = 0.5  # a box over half the art is the scene itself, not an object the words could leave clear
+
+
+def _held(rect: Rect, ctx: _Ctx) -> Rect:
+    """The part of an idea object the words must leave clear: all of a small one (a padlocked box under a bubble is
+    gone), the middle of a big one (a pile or a long row still reads with its edges covered)."""
+    x1, y1, x2, y2 = rect
+    if (x2 - x1) * (y2 - y1) < BIG_OBJECT * ctx.W * ctx.H:
+        return rect
+    dx, dy = 0.2 * (x2 - x1), 0.2 * (y2 - y1)
+    return (x1 + dx, y1 + dy, x2 - dx, y2 - dy)
+
+
 def _scene(ctx: _Ctx, bubbles, narration_text: str) -> _Plan:
+    """A scene's plan; the objects that carry its idea stay clear of the words (the eight answer cards of a GRPO panel
+    sat under a bubble). The idea check lists them most important first. In order: every object wholly clear with
+    every word on the art (the narration may move to the caption strip); the middle of the big ones only; then fewer
+    objects, dropping the last one first. When no try fits every bubble, the plan with the most bubbles on the art wins,
+    the earliest of equals, which keeps the most objects clear; the first object stays clear in every try, and the
+    bubbles that do not fit go to the caption strip under the art. The
+    plan that ignored the objects put "These yellow erasers are unstable questions" over the erasers and "These grey
+    dimmers..." over the dimmers: 95 of 1284 scene layouts of rounds 15-19 covered an idea object more than half, and a
+    smallest-first fallback kept a side prop clear over the key one."""
+    whole = [o for o in ctx.objects if (o[2] - o[0]) * (o[3] - o[1]) <= GIANT_OBJECT * ctx.W * ctx.H]
+    if not whole:
+        return _scene_plan(ctx, bubbles, narration_text, [])
+    held = [_held(o, ctx) for o in whole]
+    tries = [whole] + [held[:k] for k in range(len(held), 0, -1)]
+    best = None
+    for i, keep in enumerate(tries):
+        if i and keep == tries[i - 1]:
+            continue
+        plan = _scene_plan(ctx, bubbles, narration_text, keep)
+        if not plan.leftover:   # every bubble fits beside these objects
+            return plan
+        if best is None or len(plan.bubbles) > len(best.bubbles):   # objects dropped for no room gained stay clear
+            best = plan
+    return best
+
+
+def _scene_plan(ctx: _Ctx, bubbles, narration_text: str, objects: Sequence[Rect]) -> _Plan:
     plan = _Plan(kind="scene")
     heads = list(ctx.heads.values())
+    keep = heads + list(objects)
+    held = [(o, ctx.bubble_gap) for o in objects]
     band = free_band(ctx.img, heads, edges=ctx.edges, within=ctx.usable)
     nb = None
     if narration_text:
@@ -1331,18 +1402,18 @@ def _scene(ctx: _Ctx, bubbles, narration_text: str) -> _Plan:
         wide = band[2] - band[0] >= 0.5 * (ux2 - ux1)
         top = (ux1, uy1, ux2, uy2)
         boxes = [band, top] if wide else [top, band]
-        nb = _place_narration(ctx, narration_text, boxes, 0.42 * ctx.H, heads) or _narration_bottom(ctx, narration_text, heads)
+        nb = _place_narration(ctx, narration_text, boxes, 0.42 * ctx.H, keep) or _narration_bottom(ctx, narration_text, keep)
         plan.narration_mode = "box" if nb else "strip"
-    res = _plan(ctx, bubbles, _below(nb, band, ctx.s), [(nb.rect, ctx.bubble_gap)] if nb else [])
+    res = _plan(ctx, bubbles, _below(nb, band, ctx.s), ([(nb.rect, ctx.bubble_gap)] if nb else []) + held)
     if res is None and nb is not None:
         # first fallback: the narration moves to the caption strip, giving its room to the bubbles
-        res = _plan(ctx, bubbles, band, [])
+        res = _plan(ctx, bubbles, band, held)
         if res is not None:
             nb, plan.narration_mode = None, "strip"
     if res is None:
-        size, placed, leftover = _plan_prefix(ctx, bubbles, _below(nb, band, ctx.s), [(nb.rect, ctx.bubble_gap)] if nb else [])
+        size, placed, leftover = _plan_prefix(ctx, bubbles, _below(nb, band, ctx.s), ([(nb.rect, ctx.bubble_gap)] if nb else []) + held)
         if nb is not None:
-            size2, placed2, leftover2 = _plan_prefix(ctx, bubbles, band, [])
+            size2, placed2, leftover2 = _plan_prefix(ctx, bubbles, band, held)
             if len(placed2) > len(placed):
                 nb, plan.narration_mode, size, placed, leftover = None, "strip", size2, placed2, leftover2
         res, plan.leftover = (size, placed), leftover
@@ -1381,6 +1452,9 @@ def _chart_ok(ctx: _Ctx, rect: Optional[Rect]) -> bool:
 
 def _shrink_top(rect: Rect, f: float) -> Rect:
     return (rect[0], rect[1] + (rect[3] - rect[1]) * f, rect[2], rect[3])
+
+
+DIAGRAM_STEP_COST = 10   # bubble font size (px at scale 1) one 12 % step off a diagram's height must buy
 
 
 def _board(ctx: _Ctx, spec: dict, bubbles, narration_text: str) -> _Plan:
@@ -1437,8 +1511,10 @@ def _board(ctx: _Ctx, spec: dict, bubbles, narration_text: str) -> _Plan:
         res = _plan(ctx, bubbles, preferred(chart), base + ([(chart, ctx.chart_gap)] if chart else []))
         if res is None:
             continue
-        # one 12 % step off the chart must buy at least three font sizes of bubble text
-        score = res[0] / s - 5 * step
+        # one 12 % step off the chart must buy at least three font sizes of bubble text; six on a diagram, whose labels
+        # are the panel's smallest text (round 23: a median of 14 px beside 44 px bubbles, and the bubbles took up to
+        # a third of the board's clean height in 7 of 16 diagram panels)
+        score = res[0] / s - (DIAGRAM_STEP_COST if spec.get("kind") == "diagram" else 5) * step
         if best is None or score > best[0]:
             best = (score, chart, res)
         if res[0] >= ctx.bubble_sizes[0]:
@@ -1582,7 +1658,7 @@ def letter_panel(art: Image.Image, panel, grounding: Optional[Grounding], langua
     fonts = fonts or default_fonts()
     base = art.convert("RGB")          # analysed once; every attempt draws on a copy
     heads, quad = _scaled_grounding(grounding, base.width, base.height)
-    ctx = _Ctx(base, language, fonts, heads, quad)
+    ctx = _Ctx(base, language, fonts, heads, quad, objects=_scaled_boxes(getattr(grounding, "objects", None), grounding, base.width, base.height))
     _, spec, bubbles, narration_text = _panel_parts(panel)
     if not spec:
         return _compose(ctx, _scene(ctx, bubbles, narration_text), art.size, narration_text, board_renderer)

@@ -8,6 +8,7 @@ Nothing in here touches the network. The fakes mimic the contracts the pipeline 
 from __future__ import annotations
 
 import asyncio
+import copy
 import base64
 import inspect
 import io
@@ -360,9 +361,10 @@ def _v3_panel(n: int, beat: str, chars, dialogue, narration: str = "", claims=()
     # the visual carries the panel marker: v3 art prompts hold the visual, not the bubbles
     return {"n": n, "kind": "board" if board else "scene", "beat": beat, "title": f"Panel {n} title", "characters": list(chars),
             "scene": "A cozy study with a big window.",
-            "visual": f"{chars[0]} {'points at the big whiteboard' if board else 'reacts with a big gesture'} (Line for panel {n}).",
+            "visual": f"{chars[0]} {'points at the big whiteboard' if board else 'ties blank cards together with red yarn'} (Line for panel {n}).",
             "dialogue": [{"speaker": s, "text": x} for s, x in dialogue], "narration": narration,
-            "emotions": {c: "curious" for c in chars}, "board": board, "claims": list(claims)}
+            "emotions": {c: "curious" for c in chars}, "board": board, "claims": list(claims),
+            "shows": "" if board else f"the idea of panel {n}: blank cards tied together by red yarn"}
 
 
 def story_payload_v3() -> dict:
@@ -374,18 +376,20 @@ def story_payload_v3() -> dict:
         _v3_panel(1, "hook", ["kumo"], [("kumo", "'The animal didn't cross the street because it was too tired.' Who is 'it'?")],
                   "Translation models turn a sentence in one language into a sentence in another.", [0]),
         _v3_panel(2, "problem", ["papi", "kumo"], [("papi", "The best models so far are recurrent or convolutional networks with an encoder and a decoder."),
-                                                   ("kumo", "And the recurrent ones go one position after another?")],
-                  "Recurrent models compute along the positions of a sentence, which blocks parallel work within a training example.", [0]),
-        _v3_panel(3, "idea", ["papi", "kumo"], [("papi", "What if every word looks at every other word at once?"),
-                                                ("kumo", "So it can look straight at animal!")],
-                  "The Transformer is built only on attention: no recurrence and no convolutions.", [1, 2]),
-        _v3_panel(4, "how", ["papi"], [("papi", "Encoder and decoder both use attention instead of recurrence.")], "", [1, 2],
+                                                   ("kumo", "So they go word by word?")],
+                  "Recurrent models go position by position, which blocks parallel work.", [0]),
+        _v3_panel(3, "idea", ["papi", "kumo"], [("papi", "What if every word looks at every word at once?"),
+                                                ("kumo", "So it looks straight at animal!")],
+                  "The Transformer is built only on attention: no recurrence and no convolutions.", [1, 2],
+                  board={"kind": "diagram", "title": "Every word looks at every word",
+                         "brief": "the sentence's words in a row, with arrows from 'it' to 'animal', 'street' and 'tired'"}),
+        _v3_panel(4, "how", ["papi"], [("papi", "So it looks at animal, street and tired all at once.")], "", [1, 2],
                   board={"kind": "flow", "title": "The Transformer, end to end", "steps": ["Words in", "Encoder", "Decoder", "Words out"],
                          "highlight": [1, 2], "note": "attention only, no recurrence"}),
         _v3_panel(5, "proof", ["nezu", "papi"], [("nezu", "Nice story. Where are the numbers?"), ("papi", "Right here on the board.")]),
         _v3_panel(6, "proof", ["nezu", "papi"], [("nezu", "28.4 on English-German. Fine, that is real."),
                                                  ("papi", "More than 2.0 BLEU above the best earlier models.")], "", [3],
-                  board={"kind": "table", "title": "WMT 2014 translation (BLEU)", "subtitle": "BLEU: overlap with human translations; higher is better",
+                  board={"kind": "table", "title": "WMT 2014 translation (BLEU)", "subtitle": "WMT: a translation contest; BLEU: overlap with human translations",
                          "columns": ["Task", "BLEU"],
                          "rows": [{"cells": ["English-German", "28.4"], "quote": "establishing a new state-of-the-art BLEU score of 28.4"},
                                   {"cells": ["English-French", "41.0"], "quote": "our big model achieves a BLEU score of 41.0"}],
@@ -401,6 +405,11 @@ def story_payload_v3() -> dict:
     ]}
 
 
+# what the fake diagram designer draws: two boxes and a labelled arrow, a layout the diagram lint passes
+DIAGRAM_DESIGN = {"elements": [
+    {"type": "box", "x": 80, "y": 300, "w": 300, "h": 140, "text": "animal", "tone": "blue"},
+    {"type": "arrow", "from": [380, 370], "to": [700, 370], "tone": "red", "label": "looks at"},
+    {"type": "box", "x": 700, "y": 220, "w": 360, "h": 300, "text": "it", "tone": "red"}]}
 V3_BUDGET = {"scene": (3, 16, 20), "board": (2, 12, 14)}   # bubbles, words per bubble, narration words
 PAPER_NUMBERS = set(re.findall(r"\d+(?:\.\d+)?", V3_PAPER_TEXT + "\n" + LONG_PAPER_TEXT))
 
@@ -431,13 +440,24 @@ class PaperModel:
     questions, reader, grader, revision). Prompts are recognised by how the user message starts, never by paper content.
 
     v3 knobs: ``story(payload) -> payload`` edits the story reply; ``fix(panel, problems) -> panel`` replaces
-    ``fixed_panel``; ``quiz_misses``: per quiz round, the claim ids whose questions the reader cannot answer."""
+    ``fixed_panel``; ``quiz_misses``: per quiz round, the claim ids whose questions the reader cannot answer;
+    ``clarity_problems``: what the reader check reports; ``board_problems``: what the board check reports;
+    ``picture_problems``: what the picture check reports; ``two_frames(prompt) -> reply`` replaces the plan of two frames
+    for a picture that missed its idea; ``recap_evidence(charts, lines) -> reply`` replaces the recap evidence answer
+    (by default a line is shown by each chart that draws all of its numbers)."""
 
     def __init__(self, num_panels: int = 3, on_storyboard: Optional[Callable] = None, factcheck_problems=(), *,
-                 story: Optional[Callable] = None, fix: Optional[Callable] = None, quiz_misses=()):
+                 story: Optional[Callable] = None, fix: Optional[Callable] = None, quiz_misses=(), clarity_problems=(),
+                 board_problems=(), picture_problems=(), two_frames: Optional[Callable] = None,
+                 recap_evidence: Optional[Callable] = None):
         self.num_panels = num_panels
         self.on_storyboard = on_storyboard
         self.factcheck_problems = list(factcheck_problems)
+        self.clarity_problems = list(clarity_problems)
+        self.board_problems = list(board_problems)
+        self.picture_problems = list(picture_problems)
+        self.two_frames = two_frames
+        self.recap_evidence = recap_evidence
         self.story = story
         self.fix = fix or fixed_panel
         self.quiz_misses = [set(x) for x in quiz_misses]
@@ -459,6 +479,26 @@ class PaperModel:
         if user.startswith("You are a meticulous fact-checker"):
             self.seen.append("factcheck")
             return {"problems": list(self.factcheck_problems)}
+        if user.startswith("You are a curious reader who never saw this research paper"):
+            self.seen.append("clarity")
+            return {"problems": list(self.clarity_problems)}
+        if user.startswith("Check every board of this manga script against the words of its own panel"):
+            self.seen.append("boardcheck")
+            return {"problems": list(self.board_problems)}
+        if user.startswith("Check the pictures planned for a manga"):
+            self.seen.append("picturecheck")
+            return {"problems": list(self.picture_problems)}
+        if user.startswith("A manga that teaches a research paper ends with a recap board"):
+            self.seen.append("recap_evidence")
+            charts = json.loads(user.split("THE MANGA'S CHARTS AND TABLES:\n", 1)[1].split("\n\nTHE RECAP LINES:", 1)[0])
+            lines = json.loads(user.split("THE RECAP LINES:\n", 1)[1].split("\n\nOutput JSON only", 1)[0])
+            if self.recap_evidence is not None:
+                return self.recap_evidence(charts, lines)
+
+            def shows(chart: dict, line: str) -> bool:
+                numbers = re.findall(r"\d+(?:\.\d+)?", line)
+                return bool(numbers) and all(x in json.dumps(chart["board"], ensure_ascii=False) for x in numbers)
+            return {"lines": [{"i": x["i"], "panels": [c["n"] for c in charts if shows(c, x["line"])]} for x in lines]}
         if user.startswith("Translate this manga script"):
             self.seen.append("translate")
             return translation_of(json.loads(user.rsplit("\n\n", 1)[1]))
@@ -477,9 +517,24 @@ class PaperModel:
             self.seen.append("fix")
             flagged = json.loads(user.split("FLAGGED PANELS:\n", 1)[1].split("\n\n", 1)[0])
             return {"panels": [self.fix(item["panel"], item["problems"]) for item in flagged]}
+        if user.startswith("This manga panel's picture did not come out"):
+            self.seen.append("two_frames")
+            if self.two_frames is not None:
+                return self.two_frames(user)
+            who = re.search(r"Only these characters appear: ([^;]+);", user)
+            name = who.group(1).split(",")[0].strip() if who and who.group(1).strip() != "none" else "papi"
+            return {"frames": [{"visual": f"{name} sets blank cards in two separate piles.", "shows": "two separate piles of blank cards"},
+                               {"visual": f"{name} pushes the two piles into one mixed pile.", "shows": "one mixed pile of blank cards"}]}
+        if "You design ONE diagram for panel" in user:
+            self.seen.append("diagram")
+            return copy.deepcopy(DIAGRAM_DESIGN)
+        if user.startswith("Fix the pictures of these manga panels"):
+            self.seen.append("pictures")
+            flagged = json.loads(user.split("PANELS TO FIX:\n", 1)[1])
+            return {"panels": [{"n": item["n"], "scene": item["scene"], "visual": item["visual"], "shows": item["shows"]} for item in flagged]}
         if user.startswith("Write a short-answer quiz on a research paper's ABSTRACT"):
             self.seen.append("quiz")
-            return self._quiz(json.loads(user.rsplit("CLAIMS:\n", 1)[1]))
+            return self._quiz(json.loads(user.rsplit("CLAIMS:\n", 1)[1]), len(re.findall(r"^S\d+: ", user, re.M)))
         if user.startswith("You have never read the research paper behind this manga"):
             self.seen.append("reader")
             return self._answers(json.loads(user.rsplit("QUESTIONS:\n", 1)[1]))
@@ -496,14 +551,15 @@ class PaperModel:
                                 "dialogue": [{"speaker": "papi", "text": " ".join(c["text"].split()[:22])}], "narration": ""} for c in failed]}
         raise AssertionError(f"unexpected text prompt: {user[:120]!r}")
 
-    def _quiz(self, claims: list[dict]) -> dict:
+    def _quiz(self, claims: list[dict], sentences: int = 0) -> dict:
         per = 2 if 2 * len(claims) <= 12 else 1
         questions = []
         for c in claims:
             for k in range(per):
                 question = f"What does the abstract say in part {chr(65 + len(questions) % 26)}{'' if len(questions) < 26 else 'x'}?"
                 self.quiz_claims[question] = c["id"]
-                questions.append({"id": f"Q{len(questions) + 1}", "claim_ids": [c["id"]], "question": question, "answer": c["text"]})
+                questions.append({"id": f"Q{len(questions) + 1}", "claim_ids": [c["id"]], "question": question, "answer": c["text"],
+                                  **({"sentences": [len(questions) % sentences + 1]} if sentences else {})})
         return {"questions": questions}
 
     def _answers(self, questions: list[dict]) -> dict:

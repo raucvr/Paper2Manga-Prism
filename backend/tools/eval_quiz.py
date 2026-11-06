@@ -148,7 +148,7 @@ async def main() -> None:
     seen = answers_of(await ask(reader, reader_prompt(len(images), questions), images), questions)
     blind = answers_of(await ask(reader, closed_book_prompt(title, questions)), questions)
     graded = await aq.grade(grader, questions, seen)
-    graded_blind = await aq.grade(grader, questions, blind)
+    graded_blind = await aq.grade(grader, questions, blind, cite=False)   # no manga, so nothing to cite
 
     def score(grades) -> float:
         return round(sum(float(g.get("score") or 0) for g in grades) / max(1, len(questions)), 3)

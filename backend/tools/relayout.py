@@ -27,15 +27,9 @@ from PIL import Image  # noqa: E402
 
 
 def load_grounding(path: Path):
-    from services.lettering import Grounding
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not data:
-        return None
-    return Grounding(size=tuple(data.get("size") or (0, 0)), heads={k: tuple(v) for k, v in (data.get("heads") or {}).items()},
-                     board=[tuple(p) for p in data["board"]] if data.get("board") else None, bubbles=data.get("bubbles") or [],
-                     text_found=data.get("text_found") or [], extras=data.get("extras") or [], matches=data.get("matches") or {})
+    """grounding_NN.json as the job runner reads it (the idea's object boxes included)."""
+    from services.jobs import _grounding_from_file
+    return _grounding_from_file(path)
 
 
 async def translated(job: Path, sb, language: str):

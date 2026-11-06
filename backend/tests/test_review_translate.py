@@ -130,6 +130,10 @@ async def test_s3_string_label_is_not_split_into_characters_to_match_the_label_c
     ("Hello there。", "zh-CN", False),       # full-width punctuation alone is not the target script
     ("Why is it so slow?", "ja-JP", False),
     ("Anything at all", "en-US", True),
+    ("https://wang-kevin3290.github.io/scaling-crl/", "zh-CN", True),   # nothing to translate in a web address
+    ("代码在 github.com/foo/scaling-crl", "zh-CN", True),
+    ("Visit www.example.org today", "zh-CN", False),                      # the words around it still are
+    ("huggingface.co/datasets/openai/mrcr", "zh-CN", True),
 ])
 def test_s3_has_script(text, language, expected):
     assert _has_script(text, language) is expected

@@ -101,7 +101,7 @@ async def fixed_quiz(engines, sb, quiz_path: Path) -> dict:
                        ("closed_book", "(This manga has no panels.)")):
         try:
             answers = await aq.answer_questions(engines.fast_text, text, questions, usage=usage)
-            grades = await aq.grade(engines.text, questions, answers, text, usage=usage)
+            grades = await aq.grade(engines.text, questions, answers, text, usage=usage, cite=name != "closed_book")
         except Exception as e:  # noqa: BLE001  (closed book may legitimately answer nothing)
             out[name] = {"score": 0.0, "error": f"{type(e).__name__}: {str(e)[:200]}"}
             continue
@@ -158,6 +158,7 @@ async def main() -> None:
     ap.add_argument("--writer", help="text_model for this run (provider/model)")
     ap.add_argument("--checker", help="check_model for this run (provider/model)")
     ap.add_argument("--translator", help="translate_model for this run (provider/model)")
+    ap.add_argument("--no-figures", action="store_true", help="do not read the paper's figures with the vision model")
     args = ap.parse_args()
 
     from config_loader import get_config
@@ -176,10 +177,16 @@ async def main() -> None:
     lo, hi = ms.min_panels, ms.max_panels
 
     t0 = time.time()
-    paper = extract_paper(args.pdf.read_bytes(), 120_000, args.pdf.name)
+    pdf = args.pdf.read_bytes()
+    paper = extract_paper(pdf, 120_000, args.pdf.name)
     from services.ledger import section
     (args.out / "tables.txt").write_text(section(paper.body) or "(no tables read from the PDF layout)\n", encoding="utf-8")
     engines = build_engines({"text_model": args.writer, "check_model": args.checker, "translate_model": args.translator})
+    raw_ms = get_config().get_raw_config().get("manga_settings", {}) or {}
+    if not args.no_figures and str(raw_ms.get("read_figures", True)).strip().lower() not in ("false", "0", "no", "off"):
+        from services.paper_figures import add_figures, section as figures_section
+        figs = await add_figures(paper, pdf, engines.vision, cache_dir=Path(__file__).resolve().parents[2] / "output" / "_figures")
+        (args.out / "figures.txt").write_text(figures_section(figs) or "(no figures read)\n", encoding="utf-8")
     cast, _sheets = build_cast(args.theme)
     writer = StoryboarderV2(engines.text, engines.fast_text, engines.check, engines.translate,
                             cache_key=f"dry-{args.out.name}-{int(t0)}")

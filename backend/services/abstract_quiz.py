@@ -28,8 +28,9 @@ import unicodedata
 from typing import Optional
 
 from engines.base import BaseEngine, GenerationConfig
-from services.storyboarder_v2 import (LANG_NAMES, Cast, PanelV2, StoryboardV2, _as_list, _ask_json, _claim_ids, _optional,
-                                      _v3_budget, _v3_rules)
+from services import storyboarder_v2 as _story
+from services.storyboarder_v2 import (LANG_NAMES, Cast, PanelV2, StoryboardV2, _as_list, _ask_json, _claim_ids, _content_tokens,
+                                      _optional, _prompt_board, _v3_budget, _v3_rules, split_sentences)
 
 PASS_SCORE = 0.85   # below this the storyboarder revises the script (research target: abstract quiz >= 85%)
 MAX_CITED = 4       # panels per answer that count as its citation: citing half the manga proves nothing
@@ -39,14 +40,14 @@ NOT_SHOWN = "not shown"
 # ----------------------------------------------------------------------------- transcript (pure)
 
 BOARD_NAMES = {"bar": "bar chart", "table": "table", "flow": "flow diagram", "compare": "comparison", "list": "checklist",
-               "links": "word links"}
+               "links": "word links", "diagram": "diagram"}
 # what boards.render_board prints besides the spec's own strings: a bar chart's footnote (unit · direction · what the
 # badge measures, as in boards._bar_caption), a recap's legend and a links board's tag
 DIRECTION_RE = re.compile(r"\b(?:higher|lower|smaller|larger|bigger|less|more|fewer)\s+is\s+better\b|越(?:高|低|小|大|少|多)越好", re.I)
 BOARD_WORDS = {"en": {"higher": "higher is better", "lower": "lower is better", "illustrative": "illustration (example weights)",
-                      "checked": "tick: shown in this manga · dot: has a number the story never shows", "unit": "unit: {}", "vs": "{} vs {}"},
+                      "checked": "tick: a chart in this manga shows it", "unit": "unit: {}", "vs": "{} vs {}"},
                "zh": {"higher": "越高越好", "lower": "越低越好", "illustrative": "示意图（权重为举例）",
-                      "checked": "打勾：漫画里展示过 · 圆点：有数字没在故事里出现", "unit": "单位：{}", "vs": "{} 相对 {}"}}
+                      "checked": "打勾：漫画里有图表展示", "unit": "单位：{}", "vs": "{} 相对 {}"}}
 # a links board draws a link whose (normalized) weight reaches LINK_STRONG strong (red), one that reaches LINK_SHOWN thin,
 # weaker ones not at all; services.boards owns that scale (boards.LINK_STRONG / LINK_SHOWN, applied to the weights
 # normalize_board returns), these stand in only when that module is missing
@@ -122,7 +123,8 @@ def _board_lines(board: dict, language: str) -> list[str]:
             lines.append(line)
         unit = _line(spec.get("unit"))
         lower = str(spec.get("higher_is_better", True)).strip().lower() in ("false", "no", "0")
-        direction = "" if DIRECTION_RE.search(" ".join([title, subtitle, unit])) else words["lower" if lower else "higher"]
+        changes = boards is not None and hasattr(boards, "_changes") and boards._changes(spec)   # as the drawing: no direction on changes
+        direction = "" if DIRECTION_RE.search(" ".join([title, subtitle, unit])) or changes else words["lower" if lower else "higher"]
         shown = unit if re.search(r"[^\W\d_]", unit) else words["unit"].format(unit) if unit else ""
         rival = badge.get("rival") if badge else None
         vs = (words["vs"].format(badge["text"], _line(bars[rival].get("label"))) if isinstance(rival, int) and 0 <= rival < len(bars)
@@ -154,6 +156,13 @@ def _board_lines(board: dict, language: str) -> list[str]:
         lines += [f"- {'☐' if _true(spec.get('open')) else '✓' if k in ticked else '•'} {x}" for k, x in enumerate(items)]
         if not _true(spec.get("open")) and spec.get("checked") is not None and len(ticked & set(range(len(items)))) < len(items):
             notes = [" · ".join(x for x in (*notes, words["checked"]) if x)]   # the legend boards draws under such a recap
+    elif kind == "diagram":   # what its drawing shows, in words (services.diagram.describe): "[a box · its texts]", "A → B (label)"
+        try:
+            from services import diagram
+            drawn = diagram.describe(spec)
+        except Exception:
+            drawn = []
+        lines += [f"- {_line(x)}" for x in drawn if _line(x)]
     elif kind == "links":
         tokens = [_line(t) for t in _as_list(spec.get("tokens"))]
         weights = [_weight(w) for w in _as_list(spec.get("weights"))]
@@ -343,6 +352,14 @@ def _match(items: list[dict], ids: list[str]) -> dict[str, dict]:
     return out
 
 
+def _numbered(items: list[dict]) -> tuple[list[dict], dict[str, str]]:
+    """The items of one call renumbered Q1..Qn, and the way back to their own ids. A model renumbers ids with a gap:
+    shown G6 and then G8 (G7 was "not shown", so never sent), Seed graded G8 as "G7", G9 as "G8" and G10 as "G9", and
+    every verdict after the gap landed on the wrong question."""
+    sent = [dict(item, id=f"Q{i}") for i, item in enumerate(items, start=1)]
+    return sent, {s["id"]: item["id"] for s, item in zip(sent, items)}
+
+
 def _claim_list(claims) -> list[dict]:
     """Abstract claims as [{"id", "text", "quote"}]: dicts from the analysis, or bare strings (id = position)."""
     out: list[dict] = []
@@ -358,9 +375,10 @@ def _claim_list(claims) -> list[dict]:
 
 
 def _question_list(questions) -> list[dict]:
-    """Questions as [{"id", "claim_ids", "question", "answer"}]; ids renumbered Q1..Qn when they collide."""
+    """Questions as [{"id", "claim_ids", "question", "answer"}] (and "sentences" when they have them); ids renumbered
+    Q1..Qn when they collide."""
     out = [{"id": _qid(q.get("id") or i), "claim_ids": _claim_ids(q.get("claim_ids")), "question": _line(q.get("question")),
-            "answer": _line(q.get("answer"))}
+            "answer": _line(q.get("answer")), **({"sentences": list(q["sentences"])} if isinstance(q.get("sentences"), list) else {})}
            for i, q in enumerate(_as_list(questions), start=1) if isinstance(q, dict) and _line(q.get("question")) and _line(q.get("answer"))]
     if len({q["id"] for q in out}) < len(out):
         for i, q in enumerate(out, start=1):
@@ -398,26 +416,61 @@ async def _ask(engine: BaseEngine, prompt: str, *, key: str, usage: Optional[dic
 
 # ----------------------------------------------------------------------------- questions
 
-def _quiz_size(n_claims: int) -> tuple[int, int]:
-    """8-12 questions, fewer for an abstract with very few claims (no padding with trivia), more when it has more claims."""
-    return min(8, 2 * n_claims), max(12, n_claims)
+MAX_QUESTIONS = 20
+
+
+def abstract_sentences(abstract_text: str) -> list[str]:
+    """The abstract's sentences the quiz must cover, as storyboarder_v2.verify_claims counts them (a fragment of under
+    four words is extraction debris)."""
+    return [s for s in split_sentences(abstract_text or "") if len(s.split()) >= 4]
+
+
+def _quiz_size(n_claims: int, n_sentences: int = 0) -> tuple[int, int]:
+    """8-12 questions, fewer for an abstract with very few claims (no padding with trivia), more when it has more claims
+    or sentences: every sentence gets a question, and one with several facts gets one per fact."""
+    lo = max(min(8, 2 * n_claims), min(n_sentences, MAX_QUESTIONS))
+    return lo, max(lo, min(MAX_QUESTIONS, max(12, n_claims, n_sentences + n_sentences // 2)))
+
+
+def _sentence_claims(sentence: str, claims: list[dict]) -> list[int]:
+    """The claims taken from a sentence: at least half of a claim's quote words are in it; else the one claim sharing the
+    most words with it (verify_claims gives every sentence a claim, so this is a fallback)."""
+    words = _content_tokens(sentence)
+    shared = [(len(quote & words), len(quote), c["id"]) for c in claims for quote in [_content_tokens(c.get("quote") or c.get("text") or "")]]
+    out = [cid for common, size, cid in shared if size and common >= 0.5 * size]
+    best = max(shared, default=(0, 0, None))
+    return out or ([best[2]] if best[0] else [])
 
 
 def quiz_prompt(claims, abstract_text: str = "", problems=()) -> str:
     claims = _claim_list(claims)
-    lo, hi = _quiz_size(len(claims))
+    sentences = abstract_sentences(abstract_text)
+    lo, hi = _quiz_size(len(claims), len(sentences))
     retry = f"\nYOUR PREVIOUS QUIZ WAS REJECTED: {'; '.join(problems)}. Write the whole quiz again.\n" if problems else ""
-    abstract = f"\nABSTRACT:\n{abstract_text.strip()}\n" if (abstract_text or "").strip() else ""
+    if sentences:   # the fixed eval quizzes cover every sentence, one fact per question: claims can leave a fact out
+        abstract = "\nABSTRACT, sentence by sentence:\n" + "\n".join(f"S{i}: {s}" for i, s in enumerate(sentences, start=1)) + "\n"
+        cover = (f"- {lo}-{hi} questions. Every sentence S1-S{len(sentences)} gets at least one question, and every fact a sentence states gets its "
+                 "own question: what was hard and why it matters, what earlier methods need or assume, what is new, each step of how it "
+                 "works, the training method, every result with its number and setting, how general it is, the conclusion. A sentence "
+                 "that lists several things (four properties, two kinds of tasks) gets one question that asks for the whole list. Every "
+                 "claim below gets at least one question too.\n")
+        ids = '- "sentences": the S numbers of the sentences the question checks; "claim_ids": the ids of the claims it checks.'
+        shape = '{"questions": [{"id": "Q1", "sentences": [1], "claim_ids": [0], "question": "...", "answer": "..."}]}'
+    else:
+        abstract = f"\nABSTRACT:\n{abstract_text.strip()}\n" if (abstract_text or "").strip() else ""
+        cover = (f"- {lo}-{hi} questions. Every claim below gets at least one question; a claim with several facts (a score and the "
+                 "baseline it beats, a training time and its hardware, a result and its dataset) gets one question per fact.\n")
+        ids = '- "claim_ids": the ids of the claims the question checks.'
+        shape = '{"questions": [{"id": "Q1", "claim_ids": [0], "question": "...", "answer": "..."}]}'
     return f"""Write a short-answer quiz on a research paper's ABSTRACT. It checks whether someone who read a manga about the paper (and never the paper itself) now knows what the abstract says.
 
 Rules
-- {lo}-{hi} questions. Every claim below gets at least one question; a claim with several facts (a score and the baseline it beats, a training time and its hardware, a result and its dataset) gets one question per fact.
-- A question names the setting it asks about (task, dataset, language pair, model) so it has exactly one correct answer, and it never contains its own answer.
+{cover}- A question names the setting it asks about (task, dataset, language pair, model) so it has exactly one correct answer, and it never contains its own answer.
 - No yes/no or multiple-choice questions: ask what, which, how or how much, so that a guess cannot pass.
 - The gold "answer" is short (at most 25 words) and comes only from the claims and the abstract: numbers copied exactly with their unit and setting (e.g. "28.4 BLEU on WMT 2014 English-to-German"), keeping the abstract's qualifiers (single model, including ensembles, over, about, a small fraction).
 - Ask what a reader should take away: the problem, what is new, how it works at the abstract's level, every result with its number, the cost, how general it is, the conclusion. Never ask about authors, affiliations, the venue, dates or wording.
-- "claim_ids": the ids of the claims the question checks.
-Output JSON only: {{"questions": [{{"id": "Q1", "claim_ids": [0], "question": "...", "answer": "..."}}]}}
+{ids}
+Output JSON only: {shape}
 {retry}{abstract}
 CLAIMS:
 {json.dumps(claims, ensure_ascii=False)}"""
@@ -429,16 +482,32 @@ def _yes_no(answer: str) -> bool:
     return bool(words) and words[0] in ("yes", "no") and len(words) <= 4
 
 
-def _valid_questions(data: dict, claim_ids: list[int], source: str) -> tuple[list[dict], list[str]]:
+def _sentence_ids(value, count: int) -> list[int]:
+    """Sentence numbers 1..count from "S3", 3 or ["S1", "S2"]."""
+    out = []
+    for x in _as_list(value):
+        m = re.fullmatch(r"\s*S?\s*(\d+)\s*", str(x), re.I)
+        if m and 1 <= int(m.group(1)) <= count and int(m.group(1)) not in out:
+            out.append(int(m.group(1)))
+    return out
+
+
+def _valid_questions(data: dict, claim_ids: list[int], source: str, sentences: Optional[list[str]] = None,
+                     claims: Optional[list[dict]] = None) -> tuple[list[dict], list[str]]:
     """Usable questions in reply order (a question, a gold answer, at least one known claim id; repeats dropped) and
     the rejected ones that would break the gate: a gold number that is not in the claims or the abstract (no manga
-    could ever show it), a question that already states its gold numbers, or a yes/no question."""
+    could ever show it), a question that already states its gold numbers, or a yes/no question. With the abstract's
+    ``sentences`` each question keeps the sentence numbers it checks, and one without a usable claim id gets the claims
+    taken from its sentences."""
     known = _numbers(source)
     out, rejected, seen = [], [], set()
     for item in _items(data, "questions", "question"):
         question = _line(item.get("question") or item.get("q"))
         answer = _line(item.get("answer") or item.get("gold") or item.get("a"))
         ids = [i for i in _claim_ids(item.get("claim_ids", item.get("claims"))) if i in claim_ids]
+        where = _sentence_ids(item.get("sentences", item.get("sentence")), len(sentences)) if sentences else []
+        if not ids and where and claims:
+            ids = list(dict.fromkeys(i for k in where for i in _sentence_claims(sentences[k - 1], claims) if i in claim_ids))
         if not (question and answer and ids) or question.lower() in seen:
             continue
         gold = _answer_numbers(answer)
@@ -451,18 +520,19 @@ def _valid_questions(data: dict, claim_ids: list[int], source: str) -> tuple[lis
             rejected.append(f'"{question}" is a yes/no question (a guess passes it): ask what, which, how or how much')
         else:
             seen.add(question.lower())
-            out.append({"claim_ids": ids, "question": question, "answer": answer})
+            out.append({"claim_ids": ids, "question": question, "answer": answer, **({"sentences": where} if sentences else {})})
     return out, rejected
 
 
 def _pick(items: list[dict], limit: int) -> list[dict]:
-    """At most ``limit`` questions in reply order: the first question of every claim is kept first, so trimming a long
-    reply never leaves a claim untested."""
+    """At most ``limit`` questions in reply order: the first question of every claim and of every abstract sentence is
+    kept first, so trimming a long reply never leaves a claim or a sentence untested."""
     keep, covered = set(), set()
     for k, item in enumerate(items):
-        if set(item["claim_ids"]) - covered:
+        tags = {("c", i) for i in item["claim_ids"]} | {("s", i) for i in item.get("sentences") or []}
+        if tags - covered:
             keep.add(k)
-            covered |= set(item["claim_ids"])
+            covered |= tags
     for k in range(len(items)):
         if len(keep) >= limit:
             break
@@ -479,7 +549,8 @@ async def make_questions(engine: BaseEngine, claims, abstract_text: str = "", *,
     if not claims:
         raise ValueError("no abstract claims to quiz on")
     ids = [c["id"] for c in claims]
-    lo, hi = _quiz_size(len(claims))
+    sentences = abstract_sentences(abstract_text)
+    lo, hi = _quiz_size(len(claims), len(sentences))
     source = " ".join([abstract_text or ""] + [f"{c['text']} {c['quote']}" for c in claims])
     best: list[dict] = []
     problems: list[str] = []
@@ -491,15 +562,22 @@ async def make_questions(engine: BaseEngine, claims, abstract_text: str = "", *,
                 raise
             print(f"[abstract_quiz] WARNING: the quiz retry failed ({type(e).__name__}: {e}); keeping the first quiz")
             break
-        valid, rejected = _valid_questions(data, ids, source)
+        valid, rejected = _valid_questions(data, ids, source, sentences, claims)
         items = _pick(valid, hi)
         missing = [i for i in ids if not any(i in q["claim_ids"] for q in items)]
+        untested = [k for k in range(1, len(sentences) + 1) if not any(k in q.get("sentences", ()) for q in items)]
         problems = []
         if len(items) < lo:
             problems.append(f"only {len(items)} usable questions (write {lo}-{hi}, each with a question, an answer and claim_ids)")
         if missing:
             problems.append(f"claims without a question: {', '.join(map(str, missing))}")
-        if (len(ids) - len(missing), len(items)) > (len({i for q in best for i in q["claim_ids"]}), len(best)):
+        if untested:
+            problems.append(f"sentences without a question: {', '.join(f'S{k}' for k in untested)}")
+
+        def reach(qs):   # sentences and claims tested, then size: the retry is kept only when it tests more
+            return (len({k for q in qs for k in q.get("sentences", ())}) + len({i for q in qs for i in q["claim_ids"]}), len(qs))
+
+        if reach(items) > reach(best):
             best = items
         if not problems:   # a complete quiz is kept even when a stray question was dropped
             break
@@ -543,14 +621,16 @@ async def answer_questions(engine: BaseEngine, transcript_text: str, questions: 
         pending = [q for q in questions if q["id"] not in got]
         if not pending:
             break
+        sent, back = _numbered(pending)
         try:
-            data = await _ask(engine, reader_prompt(transcript_text, pending), key="answers", usage=usage)
+            data = await _ask(engine, reader_prompt(transcript_text, sent), key="answers", usage=usage)
         except Exception as e:
             if round_ == 0 or getattr(e, "account", False):
                 raise
             print(f"[abstract_quiz] WARNING: the reader's follow-up failed ({type(e).__name__}: {e}); those questions count as not shown")
             break
-        for qid, item in _match(_items(data, "answers", "answer"), [q["id"] for q in pending]).items():
+        for local, item in _match(_items(data, "answers", "answer"), list(back)).items():
+            qid = back[local]
             answer = _line(_first(item, "answer", "text"))
             got[qid] = {"id": qid, "answer": answer or NOT_SHOWN,
                         "panels": [] if _not_shown(answer) else _panel_numbers(_first(item, "panels", "panel", "cited_panels", "citations"))}
@@ -578,12 +658,13 @@ ITEMS:
 
 
 async def grade(engine: BaseEngine, questions: list[dict], answers: list[dict], transcript_text: str = "", *,
-                usage: Optional[dict] = None) -> list[dict]:
+                usage: Optional[dict] = None, cite: bool = True) -> list[dict]:
     """Strict grades in question order: [{"id", "score": 0 | 0.5 | 1, "why"}]. "not shown" scores 0 without a call.
     With the transcript the grader sees what the cited panels contain, and an answer whose numbers the cited panels do
-    not show (or that cites no panel of the manga) is capped at 0.5 by code, whatever the grader said. One follow-up
-    call for items the grader skipped (when that call fails, they score 0 as not graded); a grader that grades nothing
-    at all raises ValueError."""
+    not show (or that cites no panel of the manga) is capped at 0.5 by code, whatever the grader said. ``cite=False``
+    grades answers given without any manga (a closed-book control), which cannot cite a panel: the cap had held every
+    closed-book answer at 0.5. One follow-up call for items the grader skipped (when that call fails, they score 0 as
+    not graded); a grader that grades nothing at all raises ValueError."""
     questions = _question_list(questions)
     panels = _panel_texts(transcript_text) if transcript_text else {}
     given = {_qid(a.get("id")): {"answer": _line(a.get("answer")), "panels": _panel_numbers(a.get("panels"))}
@@ -608,20 +689,21 @@ async def grade(engine: BaseEngine, questions: list[dict], answers: list[dict], 
         pending = [item for item, _a in items if item["id"] not in verdicts]
         if not pending:
             break
+        sent, back = _numbered(pending)
         try:
-            data = await _ask(engine, grade_prompt(pending), key="grades", usage=usage)
+            data = await _ask(engine, grade_prompt(sent), key="grades", usage=usage)
         except Exception as e:
             if round_ == 0 or getattr(e, "account", False):
                 raise
             print(f"[abstract_quiz] WARNING: the grader's follow-up failed ({type(e).__name__}: {e}); those items count as not graded")
             break
-        verdicts.update(_match(_items(data, "grades", "score"), [item["id"] for item in pending]))
+        verdicts.update({back[local]: g for local, g in _match(_items(data, "grades", "score"), list(back)).items()})
     if items and not verdicts:
         raise ValueError("the grader returned no usable grades")
     for item, a in items:
         g = verdicts.get(item["id"])
         score, why = (_score(_first(g, "score", "grade")), _line(_first(g, "why", "reason"))) if g else (0.0, "not graded")
-        problem = _citation_problem(item["question"], a, panels) if panels else ("" if a["panels"] else "no panel cited")
+        problem = "" if not cite else _citation_problem(item["question"], a, panels) if panels else ("" if a["panels"] else "no panel cited")
         if problem and score > 0.5:
             score, why = 0.5, f"{why} (capped at 0.5: {problem})".strip()
         out[item["id"]] = {"id": item["id"], "score": score, "why": why}
@@ -673,6 +755,9 @@ async def run_quiz(text_engine: BaseEngine, fast_engine: Optional[BaseEngine], s
             "untested_claim_ids": [c["id"] for c in _claim_list(claims) if c["id"] not in tested],
             "usage": usage,
         }
+        sentences = abstract_sentences(abstract_text)
+        if sentences and any("sentences" in q for q in questions):
+            result["untested_sentences"] = [k for k in range(1, len(sentences) + 1) if not any(k in q.get("sentences", ()) for q in questions)]
     except Exception as e:  # a gate, never a crash: the caller keeps the script and records the error
         if getattr(e, "account", False):   # an account problem stops the job instead (engines.byteplus.AccountError)
             raise
@@ -703,9 +788,11 @@ def _feedback(quiz: dict, claim_id: int) -> list[dict]:
 
 
 def _script_panel(p: PanelV2) -> dict:
+    """A panel as the writer sees it (a diagram as its brief and what it shows, as in the fix rounds: its elements and
+    coordinates are the designer's, and a revision that edited them shipped without a layout check)."""
     return {"n": p.n, "beat": p.beat, "kind": p.kind, "title": p.title, "characters": p.characters, "scene": p.scene,
-            "visual": p.visual, "dialogue": [{"speaker": b.speaker, "text": b.text} for b in p.dialogue], "narration": p.narration,
-            "emotions": p.emotions, "board": p.board if p.kind == "board" else None, "claims": p.claims}
+            "visual": p.visual, "shows": p.shows, "dialogue": [{"speaker": b.speaker, "text": b.text} for b in p.dialogue], "narration": p.narration,
+            "emotions": p.emotions, "board": _prompt_board(p.board) if p.kind == "board" else None, "claims": p.claims}
 
 
 def revise_prompt(sb: StoryboardV2, failed_claims, cast: Cast, *, paper_text: str = "", quiz: Optional[dict] = None) -> str:
@@ -736,6 +823,14 @@ def revise_prompt(sb: StoryboardV2, failed_claims, cast: Cast, *, paper_text: st
                          f"{board['bubble']} characters each and narration of at most {board['narration']} characters.")
     critic = next((m.name for m in cast.members if m.role == "skeptic"), "")
     proof = f"the critic {critic} asks for proof and the board answers" if critic else "someone asks for proof and the board answers"
+    # a new panel that teaches a mechanism is a diagram board (round 23: scenes tell the story, boards explain)
+    new_how = ('{"after": 9, "kind": "scene", "beat": "how", "title": "...", "characters": ["..."], "scene": "...", "visual": "...", '
+               '"shows": "what the picture alone makes clear", "dialogue": [], "narration": "...", "emotions": {}, "board": null, '
+               '"claims": [4]}' if _story.SCENE_SHOWS else
+               '{"after": 9, "kind": "board", "beat": "how", "title": "...", "characters": ["..."], "scene": "...", "visual": "...", '
+               '"shows": "", "dialogue": [{"speaker": "...", "text": "..."}], "narration": "...", "emotions": {}, "board": {"kind": '
+               '"diagram", "title": "...", "brief": "the running example\'s real things and the arrangement that shows the step"}, '
+               '"claims": [4]}')
     paper = (f"\n\nPAPER TEXT:\n{paper_text.strip()}" if (paper_text or "").strip() else
              "\n\n(The paper text is not attached: take board quotes only from the claims' quotes or from quotes already on the script's boards.)")
     return f"""A reader who never saw the paper read only the visible text of this manga (speech bubbles, narration boxes and the boards drawn in the scenes) and then took a quiz on the paper's ABSTRACT. These abstract claims did not come across:
@@ -751,7 +846,7 @@ Revise the script so that every claim above becomes VISIBLE in the panels, with 
 {_v3_rules(cast)}{language_rule}
 
 OUTPUT: JSON only:
-{{"panels": [{{"n": 7, "kind": "board", "beat": "proof", "title": "...", "characters": ["..."], "scene": "...", "visual": "...", "dialogue": [{{"speaker": "...", "text": "..."}}], "narration": "...", "emotions": {{}}, "board": <one board spec as above>, "claims": [3]}}, {{"after": 9, "kind": "scene", "beat": "how", "title": "...", "characters": ["..."], "scene": "...", "visual": "...", "dialogue": [], "narration": "...", "emotions": {{}}, "board": null, "claims": [4]}}]}}
+{{"panels": [{{"n": 7, "kind": "board", "beat": "proof", "title": "...", "characters": ["..."], "scene": "...", "visual": "...", "shows": "", "dialogue": [{{"speaker": "...", "text": "..."}}], "narration": "...", "emotions": {{}}, "board": <one board spec as above>, "claims": [3]}}, {new_how}]}}
 Revised panels carry "n" and no "after"; new panels carry "after" and no "n". "beat" is one of hook, problem, idea, how, proof, limits, payoff, recap. "board" is null on scene panels.
 
 CAST (use these lowercase names exactly)

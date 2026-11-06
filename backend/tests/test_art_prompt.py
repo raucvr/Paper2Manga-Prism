@@ -262,6 +262,95 @@ async def test_the_default_renderer_keeps_the_lettering_prompt_and_strips_still_
     assert "exactly two equal panels side by side" in image.calls[1]["prompt"]
 
 
+async def test_a_frame_of_two_is_drawn_landscape_at_the_size_asked_for():
+    from services.panel_renderer import frame_size
+    image = ImageFake()
+    renderer = PanelRenderer(image, small_cast(), sheets(), "en-US", text_free=True)
+    size = frame_size(renderer.panel_size)
+    assert size == (1120, 832) and size[0] * size[1] >= 921_600   # half the 1024x1536 panel, at least the model's smallest picture
+    await renderer.render_panel(make(), size=size)
+    await renderer.render_panel(make())
+    (frame, panel) = image.calls
+    assert (frame["config"].width, frame["config"].height) == size and "A single manga panel, landscape," in frame["prompt"]
+    assert (panel["config"].width, panel["config"].height) == (1024, 1536) and "A single manga panel, portrait," in panel["prompt"]
+    w, h = frame_size((512, 768))
+    assert w > h and w * h >= 921_600 and w % 16 == h % 16 == 0
+    nobody = build_art_prompt(make(characters=()), small_cast(), [])   # a frame may leave every character out
+    assert "No characters in this panel. papi, kumo, nezu do NOT appear." in nobody
+
+
+def test_a_picture_that_missed_its_idea_is_planned_as_two_frames():
+    from services.panel_renderer import parse_two_frames, two_frames_prompt
+    p = make(dialogue=[("papi", "We train on two types of tasks.")], narration="Mixing them avoids gaps.",
+             visual="papi taps each stack once, then pushes both stacks together into one pile.")
+    p.shows = "two stacks pushed into one mixed pile"
+    prompt = two_frames_prompt(p, ["busy top: keep the top plain",
+                                   "idea unclear: the picture must show two stacks pushed into one pile; no pushing of the stacks"])
+    assert "(the check of the best attempt: idea unclear: the picture must show two stacks pushed into one pile; no pushing" in prompt
+    assert "Only these characters appear: papi, kumo;" in prompt and "papi: We train on two types of tasks." in prompt
+    assert "narration: Mixing them avoids gaps." in prompt and p.visual in prompt and "busy top" not in prompt
+    assert parse_two_frames({"frames": [{"visual": " papi  holds two stacks ", "shows": "two stacks"},
+                                        {"visual": "one pile", "shows": "one mixed pile"}]}) == [
+        {"visual": "papi holds two stacks", "shows": "two stacks"}, {"visual": "one pile", "shows": "one mixed pile"}]
+    for bad in ({"frames": [{"visual": "one", "shows": "a"}]}, {"frames": [{"visual": "", "shows": "a"}, {"visual": "two", "shows": "b"}]},
+                {"frames": [{"visual": "one", "shows": "a"}, {"visual": "two"}]},   # a frame without shows is never idea-checked
+                {"frames": "x"}, [], None):
+        assert parse_two_frames(bad) is None, bad
+
+
+async def test_a_book_symbol_is_drawn_from_its_reference_picture():
+    # round 18's Gated Attention drew "small round grey dimmer switch" as knobs, pucks, keys, clamps and a sieve
+    from services.panel_renderer import MAX_PROPS, MAX_REFS, PROP_SIZE
+    image, sh = ImageFake(), sheets()
+    renderer = PanelRenderer(image, small_cast(), sh, "en-US", text_free=True)
+    prop = ImageContent.from_base64("cHJvcA==", "image/png")
+    await renderer.render_panel(make(characters=["papi"]), props=[("small round grey dimmer switch", prop)])
+    (call,) = image.calls
+    assert call["refs"] == [sh["papi"], prop]
+    assert "The first reference image is papi:" in call["prompt"]   # numbered: two pictures follow, not one
+    assert ("The second reference image shows the small round grey dimmer switch: draw it exactly as that image shows it"
+            in call["prompt"])
+    many = [(f"prop {w}", prop) for w in "abcdefghijkl"]
+    await renderer.render_panel(make(characters=["papi", "kumo"]), props=many)
+    assert len(image.calls[1]["refs"]) == 2 + MAX_PROPS <= MAX_REFS and "shows the prop d:" in image.calls[1]["prompt"]
+    assert "prop e" not in image.calls[1]["prompt"]
+    result = await renderer.render_prop("black circular drain hole")
+    assert image.calls[2]["refs"] == [] and (image.calls[2]["config"].width, image.calls[2]["config"].height) == PROP_SIZE
+    assert "One single black circular drain hole, drawn alone" in result.prompt and "no text" in result.prompt
+    lettered = PanelRenderer(image, small_cast(), sh, "en-US")   # the v2 lettered prompt draws no symbol sheets
+    await lettered.render_panel(make(characters=["papi"]), props=[("dimmer", prop)])
+    assert image.calls[3]["refs"] == [sh["papi"]]
+
+
+def test_symbol_sheets_never_cost_a_panel_its_action_or_a_retry_its_feedback():
+    # round 20's review: the sheet lines sat in the prompt's unclipped head, and the word cap cut the action and dropped
+    # the retry's feedback instead (a paid redraw that never asked for the fix)
+    p = make(characters=("papi", "kumo", "nezu"), scene="A cluttered workshop with tall shelves of tools, jars and boxes. " * 3,
+             visual="papi pours a stream of white tiles through a wide copper sieve into a tall glass jar of glowing green "
+                    "marbles, while kumo turns a small round grey dimmer switch and nezu watches the black drain hole. " * 3)
+    p.beat, p.shows = "how", "the tiles pass through the sieve into the jar"
+    feedback = "extra figure: remove a small bird; nobody but papi, kumo and nezu appears"
+    props = ["small round grey dimmer switch", "wide copper sieve", "tall glass jar of glowing green marbles", "black drain hole"]
+    plain = build_art_prompt(p, kumomo_cast(), ["papi", "kumo", "nezu"], feedback=feedback)
+    with_sheets = build_art_prompt(p, kumomo_cast(), ["papi", "kumo", "nezu"], feedback=feedback, props=props)
+    assert "The previous attempt had these problems" in plain   # the case only means something if the plain prompt keeps it
+    body = lambda text: text.split("Action:", 1)[1]
+    assert body(with_sheets) == body(plain)   # the same action, shows line, rules and feedback
+    assert all(f"shows the {s}: draw it exactly" in with_sheets for s in props)
+    # the symbol is told like the panel's own words: no quotes, digits or first-aid crosses copied into every panel
+    cleaned = build_art_prompt(make(characters=["papi"]), small_cast(), ["papi"], props=['white slip with a red cross and a "3"'])
+    assert "shows the white slip with a red X mark and a: draw it" in cleaned and '"3"' not in cleaned
+
+
+async def test_a_symbol_sheet_is_drawn_from_the_cleaned_symbol():
+    image = ImageFake()
+    renderer = PanelRenderer(image, small_cast(), sheets(), "en-US", text_free=True)
+    await renderer.render_prop("white slip marked with a red cross, numbered 3")
+    (call,) = image.calls
+    assert "white slip marked with a red X mark, numbered" in call["prompt"] and "red cross" not in call["prompt"]
+    assert "3" not in call["prompt"].split("for an illustrated book:", 1)[1]
+
+
 async def test_text_free_renderer_refuses_strips():
     image = ImageFake()
     renderer = PanelRenderer(image, small_cast(), sheets(), "en-US", text_free=True)
@@ -318,3 +407,52 @@ def test_a_chart_left_in_a_scene_is_drawn_as_a_blank_board():
     assert "Nezu traces something just out of view, then a slide." in prompt   # a playground slide is not a chart
     prompt = build_art_prompt(make(visual="Papi taps the fake remark bar on the board"), small_cast(), [])
     assert "Action: Papi taps something just out of view" in prompt
+
+
+def test_chat_windows_in_a_scene_are_drawn_as_glowing_orbs():
+    # Hivemind's first panel: "empty reply windows float above them" came back as three empty speech bubbles
+    prompt = build_art_prompt(make(scene="Desk with floating chat windows", visual="Kumo slumps, empty reply windows float above them."),
+                              small_cast(), [])
+    assert "Setting: Desk with small glowing orbs" in prompt and "small glowing orbs float above them" in prompt
+    assert "window" not in prompt.lower().replace("chat windows, text boxes", "")   # only the wordless rule names them
+    assert "chat windows, text boxes" in WORDLESS
+    assert "opens a window" in build_art_prompt(make(visual="Kumo opens a window."), small_cast(), [])   # a real window stays
+
+
+def test_a_teaching_scene_asks_for_its_idea_in_big_uncovered_objects():
+    p = make(visual="papi holds a small card next to a tall stack of blank pages")
+    p.beat, p.shows = "how", 'the "locked" card comes first, then 8 pages grow around it'
+    prompt = build_art_prompt(p, small_cast(), [])
+    line = next(x for x in prompt.splitlines() if x.startswith("The picture itself must make this clear"))
+    assert "the card comes first, then eight pages grow around it" in line and "LARGE and in front" in line   # quoted words go
+    assert not QUOTES.search(prompt) and "8" not in line
+    board = make(kind="board", board={"kind": "list", "title": "T", "items": ["a", "b"]})
+    board.shows = "should never be used"
+    assert "The picture itself must make this clear" not in build_art_prompt(board, small_cast(), [])
+    assert "The picture itself must make this clear" not in build_art_prompt(make(), small_cast(), [])   # no shows line
+    p.beat = "proof"                                    # a story-only scene (the skeptic's challenge) is not drawn to an idea
+    assert "The picture itself must make this clear" not in build_art_prompt(p, small_cast(), [])
+
+
+def test_a_chart_is_never_the_idea_a_picture_is_asked_to_show():
+    # "the tall bar chart towers over a tiny one" became "something just out of view towers over a tiny one": drawn and
+    # judged against nothing
+    from services.panel_renderer import art_shows
+    p = make(visual="papi holds a tall stack of cards next to a tiny one")
+    p.beat, p.shows = "how", "the tall bar chart towers over a tiny one"
+    assert art_shows(p) == "" and "The picture itself must make this clear" not in build_art_prompt(p, small_cast(), [])
+    p.shows = "the tall stack of cards towers over a tiny one"
+    assert art_shows(p) == "the tall stack of cards towers over a tiny one"
+
+
+def test_a_red_cross_is_drawn_as_an_x_mark():
+    # the delivery book's "white slip marked with a red cross" came back as a first-aid plus, and the audit read the
+    # fake-remark slips as medical kits; the words meant a mark of failure (红叉)
+    from services.panel_renderer import art_shows
+    p = make(visual="nezu slips a white red-cross slip onto a parcel; two red crosses lie on the floor")
+    p.beat, p.shows = "how", "the parcel with the red cross slip falls"
+    prompt = build_art_prompt(p, small_cast(), [])
+    assert "red X mark slip" in prompt and "two red X marks" in prompt and "red cross" not in prompt.lower()
+    assert art_shows(p) == "the parcel with the red X mark slip falls"
+    p.visual = "kumo walks across the street"   # no mark: nothing changes
+    assert "walks across the street" in build_art_prompt(p, small_cast(), [])

@@ -45,6 +45,7 @@ class Grounding:
     text_found: list[str] = field(default_factory=list)      # letters, digits or symbols drawn anywhere: "text (on where)"
     extras: list[str] = field(default_factory=list)          # figures that are not the listed characters; a clone is "a second kumo"
     matches: dict[str, bool] = field(default_factory=dict)   # cast name -> looks like its sheet (only when the model gave a verdict)
+    objects: list[Box] = field(default_factory=list)         # the objects that carry a scene's idea (lettering keeps them clear)
 
 
 class GroundingError(RuntimeError):
@@ -71,8 +72,8 @@ Return JSON only:
  "extra_creatures": ["<short description>"]}}
 - characters: one entry per drawn figure of a named character, named exactly as written above (a character drawn twice gets two entries). head = the box around the head, ears included. matches_reference = false when the figure's species, colors or face differ from its {reference}.
 - boards: blank whiteboards, boards, screens or paper sheets big enough to hold a chart: the 4 corners of the blank surface, clockwise from top-left. [] when there is none.
-- speech_bubbles: speech or thought balloons drawn in the panel. [] when there is none.
-- text_or_symbols: every letter, digit, word, numeral (clock faces included), symbol or scribbled writing drawn anywhere in the panel, one entry per surface that carries it ("text": at most 5 words of it). [] when there is none.
+- speech_bubbles: speech or thought balloons drawn in the panel, and chat windows, message boxes, caption boxes or text boxes, even empty ones (cards, papers or blocks that a character holds or that lie on a surface are objects, not text boxes). [] when there is none.
+- text_or_symbols: every letter, digit, word, numeral (clock faces included), symbol or scribbled writing drawn anywhere in the panel, one entry per surface that carries it ("text": at most 5 words of it); arrows and simple shapes drawn as objects are not text, but any mark drawn on a whiteboard or board is. [] when there is none.
 - extra_creatures: every person, animal or creature that is not one of the named characters, and any figure you cannot name. [] when there is none."""
 
 
@@ -123,6 +124,56 @@ async def locate(vision_engine: BaseEngine, image: ImageContent, cast: Cast, pre
             return grounding_from_json(data, size, names)
         last = f"reply without grounding keys: {str(response.content)[:120]}"
     raise GroundingError(f"no usable grounding JSON after {MAX_TRIES} tries ({last})")
+
+
+IDEA_PROMPT = """The image is one panel of an educational manga, drawn without words (all text is added later). Judge the drawing only.
+It is meant to show, so that a reader who reads no words understands it: {shows}
+
+Return JSON only: {{"shown": "yes", "missing": "", "objects": [[x1, y1, x2, y2]]}}
+- shown: "yes" when the objects and their arrangement make this clear at a glance; "partly" when the objects are there but small, hidden, cut off, ambiguous, or arranged so the idea does not read; "no" when they are missing or the picture shows something else.
+- missing: what a viewer cannot see or make out (objects, their size, position or arrangement; never text, labels, numbers or scores: all words are added later), in at most 15 words; "" when shown is "yes".
+- objects: boxes around the objects that carry the idea (not the characters), the most important first, as integers normalized to 0-1000 over the whole image (x from the left edge, y from the top edge); [] when there are none."""
+IDEA_LABELS = ("idea not shown:", "idea unclear:")
+# a diagnosis that asks for writing would be repeated to the image model as something to add ("no visible scores or labels")
+IDEA_TEXTY_RE = re.compile(r"\b(?:labels?|labell?ed|texts?|words?|letters?|lettering|writing|written|numbers?|numerals?|digits?|"
+                           r"scores?|values?|captions?|legends?|annotations?|titles?|names?|signs?|ratings?|percent(?:ages?|s)?)\b", re.I)
+
+
+async def check_idea(vision_engine: BaseEngine, image: ImageContent, shows: str, size: tuple[int, int],
+                     usage: Optional[dict] = None) -> tuple[Optional[str], list[Box]]:
+    """Does the wordless art show ``shows`` (a teaching scene's idea)? (problem or None, boxes of the objects that carry
+    it in pixels). One vision call, asked once more when its reply is not usable JSON; GroundingError after that."""
+    W, H = size
+    message = Message.user(IDEA_PROMPT.format(shows=" ".join(str(shows).split())), images=[image])
+    config = GenerationConfig(temperature=0.0, max_tokens=1500, thinking=False, response_format={"type": "json_object"})
+    for _ in range(2):
+        response = await vision_engine.generate_text([message], config)
+        if usage is not None:
+            for k in ("prompt_tokens", "completion_tokens"):
+                usage[k] = int(usage.get(k, 0) or 0) + int((response.usage or {}).get(k, 0) or 0)
+        try:
+            data = extract_json(response.content or "")
+        except (ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or "shown" not in data:
+            continue
+        shown = data.get("shown")
+        verdict = {True: "yes", False: "no"}.get(shown, str(shown or "")) if isinstance(shown, bool) else str(shown or "")
+        verdict = verdict.strip().lower()
+        verdict = "partly" if verdict.startswith(("partial", "mostly", "somewhat")) else "yes" if verdict == "true" else verdict
+        missing = _plain(" ".join(str(data.get("missing") or "").split()))[:160]
+        if IDEA_TEXTY_RE.search(missing):   # the words are lettered later: a redraw must never be asked for them
+            missing = ""
+        boxes = [(round(b[0] * W / SCALE), round(b[1] * H / SCALE), round(b[2] * W / SCALE), round(b[3] * H / SCALE))
+                 for b in map(_box, _shapes(data.get("objects"))) if b]
+        want = " ".join(str(shows).split()).rstrip(".")
+        if verdict.startswith("yes"):
+            return None, boxes
+        if verdict.startswith("partly"):
+            return (f"idea unclear: the picture must show {want}" + (f"; {missing}" if missing else "")
+                    + "; draw those objects larger, in front and uncovered"), boxes
+        return f"idea not shown: the picture must show {want}" + (f"; missing: {missing}" if missing else ""), boxes
+    raise GroundingError("no usable idea verdict after 2 tries")
 
 
 # ----------------------------------------------------------------------------- reply → Grounding
@@ -247,13 +298,40 @@ MARKS_RE = re.compile(r"(?:measurement|measuring|scale|tick|graduation|grid|rule
                       r"(?:tick|scale|graduation)\s+marks?|markings?|lines|stripes|dots|dashes", re.I)
 
 
-def _just_marks(text: str) -> bool:
-    """An entry that names only marks (ticks, scale lines, dots) and quotes no letters or digits."""
+def _just_marks(text: str, shapes: bool = True) -> bool:
+    """An entry that names only marks (ticks, scale lines, dots) and quotes no letters or digits; with ``shapes``, also
+    one that names only arrows or simple shapes (never on a board, which must stay blank for the code-drawn exhibit)."""
     text = str(text or "").strip()
     if not text or re.search(r"\d", text) or re.search(r"[\"“「『]", text):
         return False
     words = re.sub(r"\((?:on|in|at)\s+[^()]*\)\s*$", "", text).strip()
-    return bool(words) and bool(MARKS_RE.fullmatch(re.sub(r"\s+", " ", words.lower()).strip().rstrip(".!")))
+    return bool(words) and (bool(MARKS_RE.fullmatch(re.sub(r"\s+", " ", words.lower()).strip().rstrip(".!")))
+                            or (shapes and _just_arrows(words)))
+
+
+ARROW_GLYPHS = set("→←↑↓↔↕⇒⇐⟶⟵➜➔➝➞➡⬅⬆⬇↗↘↙↖✓✔✗✘✕✖❌✅☑")
+ARROW_WORDS = frozenset("a an the bold big large small tiny thick thin long short curved curving straight wavy dashed dotted drawn "
+                        "simple plain single double line lines motion pointing red blue black green yellow orange white gray grey "
+                        "brown pencil ink chalk shape solid left right up down upward upwards downward downwards forward backward "
+                        "one two three four five six seven eight nine ten several many multiple few some x check tick symbol "
+                        "symbols mark marks and + &".split())
+# the simple shapes a teaching picture may draw as objects (an arrow from cause to effect, a cross on a slip, a tick sticker)
+SHAPE_RE = re.compile(r"\b(?:arrows?|check ?marks?|checkmarks?|ticks?|cross(?:es)?|x[- ]?marks?|circles?|stars?|hearts?|dots?)\b", re.I)
+# "arrow pointing to the stack": where a shape points says nothing drawn, unless it names a word ("arrow pointing to EXIT")
+SHAPE_PLACE_RE = re.compile(r"\s+(?:pointing|points|leading|leads|going|goes|running|runs|from|to|toward|towards|between|at|into|"
+                            r"onto|over|under|across)\b[^A-Z0-9\"“「『]*$")
+BOARD_PLACE_RE = re.compile(r"\b(?:white|black|chalk)?boards?\b", re.I)   # not "cardboard" or "clipboard"
+
+
+def _just_arrows(words: str) -> bool:
+    """An entry that names only arrows or simple shapes ("bold arrow", "→ →", "red X cross", "five green check marks",
+    "✔️"): a picture's object, not writing."""
+    toks = re.findall(r"[^\s,]+", re.sub("[\ufe0e\ufe0f]", "", SHAPE_PLACE_RE.sub("", words)).lower())   # ✔️ ➡️: emoji selectors
+    if toks and all(set(t) <= ARROW_GLYPHS for t in toks):
+        return True
+    text = " ".join(toks)
+    rest = SHAPE_RE.sub(" ", text).split()
+    return bool(SHAPE_RE.search(text)) and all(t in ARROW_WORDS or set(t) <= ARROW_GLYPHS for t in rest)
 
 
 def _is_nothing(text) -> bool:
@@ -306,11 +384,11 @@ def _texts(value) -> list[str]:
             where = "" if _is_nothing(where) else _without(where, text)
             if (not text or _is_nothing(text)) and not where:
                 continue
-            if text and _just_marks(text):
+            if text and _just_marks(text, shapes=not BOARD_PLACE_RE.search(where)):
                 continue
             out.append(f"{text or 'writing'} (on {where})" if where else text)
         elif isinstance(item, (str, int, float)) and not isinstance(item, bool) and str(item).strip() and not _is_nothing(item) \
-                and not _just_marks(str(item)):
+                and not _just_marks(str(item), shapes=not BOARD_PLACE_RE.search(str(item))):
             out.append(str(item).strip())
     return list(dict.fromkeys(out))
 
@@ -500,7 +578,7 @@ def art_problems(g: Grounding, panel: PanelV2, art: Image.Image) -> list[str]:
         spot = f" (on {', '.join(where[:4])})" if where else ""
         problems.append(f"drawn text: remove every letter, digit and symbol{spot}; every surface stays blank")
     if g.bubbles:
-        problems.append("drawn bubbles: remove the speech bubbles; the picture has no bubbles or captions")
+        problems.append("drawn bubbles: remove the speech bubbles, chat windows and text boxes; the picture has no bubbles or captions")
     if is_board_panel(panel):
         if not g.board:
             problems.append("no board: draw a LARGE, COMPLETELY BLANK whiteboard across almost the full width, with nothing in front of it")
@@ -536,10 +614,43 @@ def _shortfall(problems) -> int:
 def rank_key(problems) -> tuple:
     """Sort key for attempts, HIGHER is better (like jobs._attempt_rank; an attempt without problems ranks highest, at
     all zeros): checked art first ("unchecked: ..." ranks below every checked attempt: a real verdict beats none, and
-    lettering gets no head boxes for it), then fewer character problems, extra figures, drawn text, board, band
-    (lexicographic), then less missing board / band size, then fewer problems. Publish max(attempts, key=rank_key).
-    Works on the strings alone, so problems read back from job state rank the same."""
+    lettering gets no head boxes for it), then fewer character problems, extra figures, drawn text, a teaching scene's
+    idea not shown, then only unclear, board, band (lexicographic), then less missing board / band size, then fewer
+    problems. Publish max(attempts, key=rank_key). Works on the strings alone, so problems read back from job state rank
+    the same."""
     problems = [str(p) for p in problems or []]
     count = lambda labels: sum(p.startswith(labels) for p in problems)
-    return (-count(UNCHECKED_LABELS), -count(CHARACTER_LABELS), -count(EXTRA_LABELS), -count(TEXT_LABELS), -count(BOARD_LABELS),
-            -count(BAND_LABELS), -_shortfall(problems), -len(problems))
+    return (-count(UNCHECKED_LABELS), -count(CHARACTER_LABELS), -count(EXTRA_LABELS), -count(TEXT_LABELS), -count(IDEA_LABELS[:1]),
+            -count(IDEA_LABELS[1:]), -count(BOARD_LABELS), -count(BAND_LABELS), -_shortfall(problems), -len(problems))
+
+
+def compose_frames(arts: list[Image.Image], groundings: list[Optional[Grounding]], size: tuple[int, int]) -> tuple[Image.Image, Grounding]:
+    """Frames stacked top to bottom into one panel of ``size``, and one Grounding in its pixels (a frame whose art could
+    not be located adds none). A character drawn in two frames keeps the head of the first one it is in under its own
+    name (its bubbles' tails point there); its head in a later frame goes in as "#2 papi", a head no speaker owns, so
+    the lettering keeps it clear like every head instead of dropping it as an object. The objects come most important
+    first, as the lettering drops the last ones first: each frame's objects in turn (the idea check lists a frame's
+    objects most important first), so the bottom frame's key object is not the first to go under a bubble; a box over
+    half its own frame is the frame itself, not an object (as lettering.GIANT_OBJECT for one picture)."""
+    from services.lettering import GIANT_OBJECT   # on use, as clean_rect: lettering may import this module
+    W, H = int(size[0]), int(size[1])
+    h = H // max(1, len(arts))
+    canvas = Image.new("RGB", (W, H), (255, 255, 255))
+    merged = Grounding(size=(W, H))
+    per_frame: list[list] = []
+    for i, (art, g) in enumerate(zip(arts, groundings)):
+        canvas.paste(art.convert("RGB").resize((W, h), Image.LANCZOS), (0, i * h))
+        if g is None:
+            continue
+        gw, gh = g.size if g.size and g.size[0] and g.size[1] else art.size
+        sx, sy = W / gw, h / gh
+        box = lambda b: (round(b[0] * sx), round(b[1] * sy + i * h), round(b[2] * sx), round(b[3] * sy + i * h))
+        for name, b in g.heads.items():
+            merged.heads[f"#{i + 1} {name}" if name in merged.heads else name] = box(b)
+        per_frame.append([box(b) for b in g.objects if (b[2] - b[0]) * (b[3] - b[1]) <= GIANT_OBJECT * gw * gh])
+        merged.text_found += list(g.text_found)
+        merged.extras += list(g.extras)
+        for name, ok in g.matches.items():
+            merged.matches[name] = merged.matches.get(name, True) and ok
+    merged.objects = [f[k] for k in range(max(map(len, per_frame), default=0)) for f in per_frame if k < len(f)]
+    return canvas, merged

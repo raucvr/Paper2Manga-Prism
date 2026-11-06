@@ -97,6 +97,8 @@ def test_select_reference_names_uses_present_characters_in_cast_order():
     partial = {"papi": sheets["papi"], "nezu": sheets["nezu"]}
     assert select_reference_names([make_panel(1, characters=["kumo"])], partial, cast) == ["papi", "nezu"]  # nobody present has one
     assert select_reference_names([make_panel(1)], {}, cast) == []
+    # a frame of objects only gets no sheet: given all three, the image model drew kumo into round 19's smoke test frame
+    assert select_reference_names([make_panel(1, characters=[])], sheets, cast) == []
 
 
 def test_typical_panel_prompt_stays_under_450_words():

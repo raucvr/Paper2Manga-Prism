@@ -424,3 +424,61 @@ def test_markdown_never_reaches_the_lettering():
 def test_copies_of_a_cast_member_are_flagged_for_a_rewrite(text, flagged):
     from services.storyboarder_v2 import _mentions_people
     assert _mentions_people(text) is flagged
+
+
+async def test_the_idea_a_picture_must_show_is_fact_checked_and_kept_free_of_people():
+    sb = sb_with([["P1"], ["P2"]])
+    sb.panels[1].shows = "the old method's stack is taller than the new one's"
+    engine = FakeEngine([{"problems": [{"id": "2.s", "issue": "the paper's new method is the taller one",
+                                        "corrected": "the new method's stack is taller than the old one's"}]}])
+    assert await StoryboarderV2(engine).factcheck(sb, PaperText("T", "The new method scores higher.", [])) == 1
+    assert sb.panels[1].shows == "the new method's stack is taller than the old one's" and '"id": "2.s"' in engine.prompts[0]
+    from .test_story_v3 import clean_panels, v3_storyboard
+    v3 = v3_storyboard(clean_panels())
+    v3.panels[1].shows = "two students tie every card to every other card with red yarn"
+    fit = FakeEngine([{"items": [{"id": "2.s", "text": "every card is tied to every other card with red yarn; nobody else is there"}]}])
+    assert await StoryboarderV2(fit).fit(v3, "en-US") == 1
+    assert v3.panels[1].shows.startswith("every card is tied") and '"id": "2.s"' in fit.prompts[0]
+
+
+async def test_a_picture_whose_shows_alone_the_fact_check_corrected_gets_its_visual_rewritten_to_agree(monkeypatch):
+    # 22 scenes of 24 books (rounds 14-15) had only one of the two corrected: the image model draws "visual", the art check
+    # judges "shows", and LongZero's weaker-model pile was drawn the size the old "visual" said (scenes with a picture idea:
+    # rounds 3-22; round 23's scenes have none)
+    from services import storyboarder_v2
+    monkeypatch.setattr(storyboarder_v2, "SCENE_SHOWS", True)
+    from .test_story_v3 import clean_panels, v3_storyboard
+    sb = v3_storyboard(clean_panels())
+    sb.panels[1].kind, sb.panels[1].board = "scene", None
+    sb.panels[1].visual = "papi sets the old method's tall stack of cards beside the new method's short stack"
+    sb.panels[1].shows = "the old method's stack is taller than the new one's"
+    story = StoryboarderV2(FakeEngine([
+        {"problems": [{"id": "2.s", "issue": "the paper's new method is the taller one", "corrected": "the new method's stack is taller than the old one's"}]},
+        {"panels": [{"n": 2, "scene": "a study", "visual": "papi sets the new method's tall stack of cards beside the old method's short stack",
+                     "shows": "the tall stack is the new method's"}]}]))   # the reply rewords the corrected field too
+    await story.factcheck(sb, PaperText("T", "The new method scores higher.", []))
+    await story._sync_pictures(sb, make_cast())
+    fix = story.text_engine.prompts[1]
+    assert "Fix the pictures of these manga panels" in fix and 'the fact-check corrected \\"shows\\"' in fix and 'rewrite \\"visual\\"' in fix
+    assert sb.panels[1].visual.startswith("papi sets the new method's tall stack") and story.last_fixes == []
+    # the reply's two fields stand together (putting the checker's words back could split the pair again); the last check
+    # reads the panel again
+    assert sb.panels[1].shows == "the tall stack is the new method's"
+    # both corrected, or neither: nothing to sync
+    both = StoryboarderV2(FakeEngine([{"problems": [{"id": "2.s", "issue": "x", "corrected": "the left stack is taller"},
+                                                    {"id": "2.v", "issue": "x", "corrected": "papi stacks the left pile taller"}]}]))
+    await both.factcheck(sb, PaperText("T", "The new method scores higher.", []))
+    await both._sync_pictures(sb, make_cast())
+    assert len(both.text_engine.prompts) == 1
+
+
+async def test_a_translations_fact_check_leaves_the_english_art_directions_alone():
+    # a zh-CN check rewrote a shows line in Chinese (adding a teacher figure), which reached the image model and the idea check
+    sb = sb_with([["P1"], ["P2"]])
+    sb.language = "zh-CN"
+    sb.panels[1].visual, sb.panels[1].shows = "papi stacks two piles of cards", "the left stack of cards is taller than the right"
+    engine = FakeEngine([{"problems": [{"id": "2.s", "issue": "x", "corrected": "右边那堆更高，一位老师在旁边"},
+                                       {"id": "2.v", "issue": "x", "corrected": "爸爸把两堆卡片摆好"}]}])
+    await StoryboarderV2(engine).factcheck(sb, PaperText("T", "The new method scores higher.", []), "zh-CN")
+    assert sb.panels[1].shows == "the left stack of cards is taller than the right" and sb.panels[1].visual == "papi stacks two piles of cards"
+    assert '"id": "2.s"' not in engine.prompts[0] and '"id": "2.v"' not in engine.prompts[0]

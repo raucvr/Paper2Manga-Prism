@@ -618,6 +618,20 @@ export function boardSummary(board: unknown, language?: string): BoardSummary | 
       source = b.illustrative === false ? "" : words.illustrative;
       break;
     }
+    case "diagram":
+      // The drawing's words in the designer's order: what is written in its boxes and beside its things, and each
+      // arrow's label after an arrow (the shapes themselves are the picture).
+      for (const raw of listOf(b.elements)) {
+        const e = recordOf(raw);
+        if (!e) continue;
+        const kind = textItems(e.type)[0]?.toLowerCase();
+        const text = textItems(e.text)[0] ?? "";
+        const label = textItems(e.label)[0] ?? "";
+        if (kind === "arrow" || kind === "line") add(label && `${kind === "arrow" ? "→" : "—"} ${label}`);
+        // a step badge (a small circle with a number) gives an order, not a word; a number in a box or on its own is a value
+        else if (!(kind === "circle" && Number(e.r) <= 45 && /^\d{1,2}$/.test(text))) add(text);
+      }
+      break;
   }
 
   if (!title && !subtitle && lines.length === 0) return null;

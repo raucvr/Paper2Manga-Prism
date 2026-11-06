@@ -34,7 +34,20 @@ LIST = {"kind": "list", "title": "What the paper showed", "items": ["Only attent
                                                                     "28.4 BLEU English→German", "3.5 days on 8 GPUs"]}
 LINKS = {"kind": "links", "title": "Who does 'it' look at?", "tokens": ["The", "animal", "was", "tired", "so", "it", "slept"],
          "from": 5, "weights": [0.02, 0.6, 0.05, 0.2, 0.03, 0.0, 0.1], "illustrative": True}
-SPECS = {"bar": BLEU, "table": TABLE, "flow": FLOW, "compare": COMPARE, "list": LIST, "links": LINKS}
+DIAGRAM = {"kind": "diagram", "title": "Who fills the hard token first?", "brief": "the same tokens filled left to right and in any order",
+           "elements": [
+               {"type": "text", "x": 300, "y": 60, "text": "Left to right", "tone": "blue", "size": 36, "bold": True},
+               {"type": "text", "x": 900, "y": 60, "text": "Any order", "tone": "red", "size": 36, "bold": True},
+               {"type": "box", "x": 120, "y": 140, "w": 110, "h": 80, "text": "180", "tone": "ink"},
+               {"type": "box", "x": 370, "y": 140, "w": 110, "h": 80, "text": "×", "tone": "red", "fill": "solid"},
+               {"type": "arrow", "from": [230, 180], "to": [370, 180], "tone": "ink"},
+               {"type": "box", "x": 720, "y": 140, "w": 110, "h": 80, "text": "180", "tone": "ink"},
+               {"type": "box", "x": 970, "y": 140, "w": 110, "h": 80, "text": "×", "tone": "red", "dashed": True},
+               {"type": "arrow", "points": [[775, 135], [900, 70], [1025, 135]], "curved": True, "tone": "red", "label": "skips it"},
+               {"type": "text", "x": 1025, "y": 270, "text": "filled last", "tone": "red"},
+               {"type": "mark", "x": 300, "y": 500, "mark": "check", "tone": "blue", "size": 60},
+               {"type": "mark", "x": 900, "y": 500, "mark": "cross", "tone": "red", "size": 60}]}
+SPECS = {"bar": BLEU, "table": TABLE, "flow": FLOW, "compare": COMPARE, "list": LIST, "links": LINKS, "diagram": DIAGRAM}
 
 
 # ----------------------------------------------------------------------------- parse_value / display_value / find_numbers
@@ -267,6 +280,44 @@ def test_delta_badge_powers_of_ten_are_ratios():
     assert delta_badge(FLOPS) == {"text": "≈1/5.2", "best": 3, "rival": 2, "better": True, "kind": "ratio"}
     worse = {**FLOPS, "higher_is_better": True}                 # the paper's value is the worse one: no flattering ratio
     assert delta_badge(worse)["text"] == "−9.7 × 10¹⁹" and delta_badge(worse)["better"] is False
+
+
+def test_delta_badge_percentages_fall_in_points():
+    # Gated Attention: "It dropped from 46.7% to 4.8%?!" beside "≈1/9.7"; a share falls in points
+    sink = {"kind": "bar", "title": "Attention on the first token", "higher_is_better": False, "unit": "% of total attention",
+            "bars": [{"label": "Standard", "value": "46.7", "baseline": True}, {"label": "Gated", "value": "4.8", "highlight": True}]}
+    assert delta_badge(sink)["text"] == "−41.9" and delta_badge(sink)["kind"] == "diff"
+    assert delta_badge({**sink, "unit": ""})["text"] == "≈1/9.7"   # a cost or a time still drops as a ratio
+    marked = {**sink, "unit": "", "bars": [{**b, "value": b["value"] + "%"} for b in sink["bars"]]}
+    assert delta_badge(marked)["text"] == "−41.9"   # the footnote names the unit
+    for unit in ("总注意力百分比", "百分点", "查询占比", "pp", "share of queries"):   # the translation keeps the badge
+        assert delta_badge({**sink, "unit": unit})["text"] == "−41.9", unit
+    assert delta_badge({**sink, "unit": "", "title": "Attention on first token (%)"})["text"] == "−41.9"
+    assert delta_badge({**sink, "unit": "99th percentile latency (ms)"})["text"] == "≈1/9.7"   # a percentile is no share
+
+
+def test_delta_badge_is_a_ratio_when_a_quote_states_the_gap_as_a_multiple():
+    # 1000-layer RL: the quote read "52×" and the words said 52 times, while the badge drew "+636.4"
+    depth = {"kind": "bar", "title": "Time at goal", "unit": "steps / 1000", "bars": [
+        {"label": "Depth 4", "value": "12.6", "baseline": True, "quote": "Humanoid U-Maze 12.6 ±1.2 649 ±33 52×"},
+        {"label": "Depth 64", "value": "649", "highlight": True}]}
+    assert delta_badge(depth) == {"text": "≈51.5×", "best": 1, "rival": 0, "better": True, "kind": "ratio"}
+    for quote in ("about 50 times more steps at the goal", "a 52-fold gain", "提升52倍"):
+        said = {**depth, "bars": [{**depth["bars"][0], "quote": quote}, depth["bars"][1]]}
+        assert delta_badge(said)["kind"] == "ratio", quote
+    plain = {**depth, "bars": [{k: v for k, v in b.items() if k != "quote"} for b in depth["bars"]]}
+    assert delta_badge(plain)["text"] == "+636.4"
+    # titles and notes are translated, so they never decide: the Chinese chart draws the English one's badge
+    assert delta_badge({**plain, "subtitle": "about 52 times more"})["text"] == "+636.4"
+    zh = {**depth, "title": "到达目标的时间", "unit": "步数/1000", "bars": [{**depth["bars"][0], "label": "深度4"},
+                                                                    {**depth["bars"][1], "label": "深度64"}]}
+    assert delta_badge(zh)["text"] == delta_badge(depth)["text"]
+    other = {**depth, "bars": [{**depth["bars"][0], "quote": "3× the width"}, depth["bars"][1]]}
+    assert delta_badge(other)["text"] == "+636.4"                                   # a multiple of something else
+    assert delta_badge({**depth, "unit": "% success"})["text"] == "+636.4"          # a share still falls in points
+    near = {**depth, "bars": [{**depth["bars"][0], "value": "100", "quote": "baseline speed 1.00× (reference)"},
+                              {**depth["bars"][1], "value": "104"}]}
+    assert delta_badge(near)["text"] == "+4"                                         # a reference "1.00×" is no stated gap
 
 
 @pytest.mark.parametrize("bars", [
@@ -675,3 +726,78 @@ def test_the_bar_footnote_names_the_unit_and_what_the_badge_measures():
     assert _bar_caption(spec, "en", badge) == f"unit: % · lower is better · {badge['text']} vs Baseline"
     assert _bar_caption(spec, "zh", badge) == f"单位：% · 越低越好 · {badge['text']} 相对 Baseline"
     assert _bar_caption({**spec, "unit": "BLEU"}, "en") == "BLEU · lower is better"   # a named metric stays as it is
+
+
+def test_subtitles_and_footnotes_are_dark_enough_to_read():
+    """Readers found the grey small print too faint: subtitles and footnotes reach the 4.5:1 contrast of small text."""
+    def luminance(rgb):
+        ch = [c / 255 for c in rgb]
+        ch = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in ch]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+    def contrast(rgb):
+        return 1.05 / (luminance(rgb) + 0.05)
+
+    assert contrast(boards.NOTE_GREY) >= 6.5 and contrast(boards.GREY) < 4.5   # the bars keep their softer grey
+    img = boards.render_board({"kind": "bar", "title": "BLEU", "subtitle": "how close to a human translation; higher is better",
+                               "bars": [{"label": "A", "value": "26.4", "baseline": True}, {"label": "B", "value": "28.4", "highlight": True}],
+                               "source": "Table 2"}, "en-US", (1000, 700))
+    px = np.asarray(img.convert("RGB")).reshape(-1, 3)
+    assert (np.abs(px - np.array(boards.NOTE_GREY)).sum(axis=1) < 30).sum() > 200   # the subtitle and source are drawn in it
+
+
+def test_the_recap_legend_fits_the_footer():
+    # the English legend was 1.3x the footer and lost the dot's meaning to an ellipsis
+    from PIL import Image
+    for lang in ("en", "zh"):
+        for w, h in ((808, 464), (896, 408), (864, 616)):
+            c = boards._Ctx(Image.new("RGB", (w * boards.SS, h * boards.SS)), boards._Pen(boards.default_fonts(), lang), 9)
+            assert c.pen.width(boards._TXT[lang]["checked"], c.px(24 * c.u)) <= c.W - 2 * c.m, (lang, w, h)
+
+
+def test_significance_legends_are_not_markdown():
+    # econ_ai_service's legend "* <10%, *** <1%" was flagged as markdown in every round and stayed on the board
+    for legend in ("Stars: * <10%, *** <1% chance of luck", "***: p<0.01", "*** = p<0.01", "p<0.10 (*), p<0.05 (**), p<0.01 (***)",
+                   "*** significant at the 1% level", "*** p<0.01: very unlikely to be chance"):
+        board = {"kind": "table", "title": "Effects", "subtitle": legend, "columns": ["Call", "Effect"],
+                 "rows": [{"cells": ["1-3", "0.234***"]}, {"cells": ["4-6", "0.081*"]}]}
+        assert not any("markdown" in x for x in board_problems(board)), legend
+    board = {"kind": "table", "title": "Effects", "subtitle": "a **bold** claim", "columns": ["Call", "Effect"],
+             "rows": [{"cells": ["1-3", "0.234"]}, {"cells": ["4-6", "0.081"]}]}
+    assert any("markdown" in x for x in board_problems(board))
+
+
+def test_a_board_that_calls_lower_worse_cannot_print_lower_is_better():
+    # "lower = less effort (backfire)" over a printed "lower is better", two rounds of econ_ai_service
+    board = {"kind": "bar", "title": "Call duration change", "subtitle": "lower = less effort (backfire)", "higher_is_better": False,
+             "bars": [{"label": "Calls 1-3", "value": "-0.145", "highlight": True}, {"label": "Calls 7-9", "value": "-0.128"}]}
+    assert any("set higher_is_better to true" in x for x in board_problems(board))
+    board["higher_is_better"] = True
+    assert not any("higher_is_better" in x for x in board_problems(board))
+
+
+def test_a_board_where_lower_is_good_is_left_alone():
+    for subtitle in ("lower error = less harm", "Harmful reply rate; lower = fewer harmful replies", "lower is better, higher is worse"):
+        board = {"kind": "bar", "title": "Error", "subtitle": subtitle, "higher_is_better": False,
+                 "bars": [{"label": "A", "value": "3.1", "highlight": True}, {"label": "B", "value": "4.2"}]}
+        assert not any("set higher_is_better to true" in x for x in board_problems(board)), subtitle
+
+
+def test_a_chart_of_changes_prints_no_better_direction():
+    # "lower is better" under call-duration changes, while the story called shorter calls lost effort (four rounds)
+    from services.boards import _bar_caption
+    board = boards.normalize_board({"kind": "bar", "title": "Call duration change", "subtitle": "lower = shorter calls", "higher_is_better": False,
+                                    "bars": [{"label": "Calls 1-3", "value": "-0.145", "highlight": True}, {"label": "Calls 4-6", "value": "-0.009"},
+                                             {"label": "Calls 81-120", "value": "0.003"}]})
+    assert "better" not in _bar_caption(board, "en") and "越" not in _bar_caption(board, "zh")
+    scores = boards.normalize_board({"kind": "bar", "title": "BLEU", "bars": [{"label": "Transformer", "value": "28.4", "highlight": True},
+                                                                              {"label": "ConvS2S", "value": "26.4"}]})
+    assert "higher is better" in _bar_caption(scores, "en")
+
+
+def test_a_trend_over_model_sizes_keeps_its_direction():
+    from services.boards import _bar_caption
+    board = boards.normalize_board({"kind": "bar", "title": "Perplexity by size", "higher_is_better": False,
+                                    "bars": [{"label": "7B", "value": "9.1"}, {"label": "13B", "value": "8.2"},
+                                             {"label": "70B", "value": "6.4", "highlight": True}]})
+    assert "lower is better" in _bar_caption(board, "en")

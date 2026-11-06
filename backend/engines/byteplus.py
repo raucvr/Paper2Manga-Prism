@@ -10,9 +10,11 @@ Docs: https://ai.byteplus.com/ark/region:ap-southeast-1/docs/image-generation-ap
 """
 
 import asyncio
+import hashlib
 import json
 import random
 import ssl
+import time
 from typing import Optional, AsyncIterator
 
 import httpx
@@ -39,6 +41,14 @@ SEEDREAM_MAX_REFERENCE_IMAGES = 10
 
 RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 STREAM_FROM_TOKENS = 8000   # replies allowed this long (or with thinking) are streamed: DeepSeek V4 Pro thinks for minutes
+# Seed keeps a prompt prefix in its implicit cache for 30-60 s only (measured 2026-10-27: a hit 30 s later, none 60 s later),
+# so a job's paper-first calls, minutes apart, read the paper at full price (19% of Seed's input was cached). An explicit
+# prefix cache (Responses API) serves it for an hour, whatever the gaps; storage costs $0.0083 per million tokens an hour.
+PREFIX_CACHE_MODELS = ("seed-", "dola-seed-")
+PREFIX_CACHE_SECONDS = 3600
+PREFIX_MIN_CHARS = 4000          # about 1,000 tokens: a shorter prefix is not worth a cache
+THINKING_HEADROOM = 65536        # a reply's max_output_tokens counts the reasoning; the chat API's max_tokens does not
+MAX_OUTPUT_TOKENS = 131072
 
 
 class BytePlusAPIError(RuntimeError):
@@ -103,6 +113,20 @@ class AccountError(BytePlusAPIError):
         return f"{self.hint} (ModelArk {self.code or self.status})"
 
 
+class PrefixCacheError(RuntimeError):
+    """An explicitly cached call could not be made: the chat API answers it, as before. ``permanent`` (the Responses API
+    refused a parameter, or this model on that endpoint) stops explicit caching of the model for the engine's life;
+    otherwise (the cache could not be created just now, an unexpected refusal) only this call goes to the chat API."""
+
+    def __init__(self, message: str, permanent: bool = False):
+        super().__init__(message)
+        self.permanent = permanent
+
+
+# account-wide refusals stop the job on any endpoint; a refusal of one model or feature may be the Responses endpoint's only
+ACCOUNT_WIDE = ("AuthenticationError", "AccountOverdueError", "SetLimitExceeded", "QuotaExceeded")
+
+
 class ContentFilteredError(BytePlusAPIError):
     """The provider's content filter refused the request and answered nothing (HTTP 200, finish_reason
     "content_filter", 0 tokens): DeepSeek V4 Pro does this for some ordinary paper text (CoT's CommonsenseQA examples)
@@ -118,6 +142,26 @@ def _api_error(status: int, body: str, model: str = "") -> BytePlusAPIError:
     code, _detail = _error_code(body)
     account = (status == 401 or any(code.startswith(k) for k in ACCOUNT_HINTS)) and not any(code.startswith(r) for r in RATE_CODES)
     return AccountError(status, body, model) if account else BytePlusAPIError(status, body)
+
+
+RETRYABLE_STREAM_CODES = ("Internal", "ServerOverloaded", "ServiceUnavailable", "Timeout", "Busy")
+
+
+def _stream_error(error) -> BytePlusAPIError:
+    """An error event inside a streamed reply. A rate limit or an overloaded server can cut a reply off minutes into it
+    (RequestBurstTooFast stopped a story call at event 2869, 2026-10-27, and failed the job): those are marked
+    ``retryable`` and asked again with the usual backoff; any other error stops the call."""
+    body = json.dumps({"error": error})[:500]
+    code = str(error.get("code") or "") if isinstance(error, dict) else ""
+    err = BytePlusAPIError(429 if code.startswith(RATE_CODES) else 500, body)
+    err.retryable = code.startswith(RATE_CODES) or any(k in code for k in RETRYABLE_STREAM_CODES)
+    return err
+
+
+def _response_text(data: dict) -> str:
+    """The answer of a Responses API reply: its message items' output_text (not the reasoning)."""
+    return "".join(str(part.get("text") or "") for item in data.get("output") or [] if isinstance(item, dict) and item.get("type") == "message"
+                   for part in item.get("content") or [] if isinstance(part, dict) and part.get("type") == "output_text")
 
 
 def normalize_size(width: int, height: int) -> str:
@@ -179,6 +223,10 @@ class BytePlusEngine(BaseEngine):
         self.max_retries = max_retries
         self._client: Optional[httpx.AsyncClient] = None
         self.tokens: dict[str, dict[str, int]] = {}   # model → prompt / completion / cached tokens spent through this engine
+        self._prefixes: dict[tuple, tuple[str, float]] = {}   # (model, thinking, prefix hash) → (cache response id, expiry)
+        self._prefix_locks: dict[tuple, asyncio.Lock] = {}
+        self._prefix_off: set[str] = set()   # models whose explicit cache the API refused: the chat API serves them
+        self._prefix_failed: dict[tuple, float] = {}   # key → when creating its cache last failed (the chat API serves it a while)
 
     # ------------------------------------------------------------------ meta
     @property
@@ -235,16 +283,23 @@ class BytePlusEngine(BaseEngine):
         start with the same backoff as ``_post``."""
         client = await self._get_client()
         url = f"{self.base_url}{path}"
-        body = {**payload, "stream": True, "stream_options": {"include_usage": True}}
+        responses = path == "/responses"
+        body = {**payload, "stream": True, **({} if responses else {"stream_options": {"include_usage": True}})}
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries + 1):
             try:
                 async with client.stream("POST", url, json=body) as response:
                     if response.status_code < 400:
-                        return await self._assemble(response, payload.get("model", self.model))
-                    err = _api_error(response.status_code, (await response.aread()).decode(errors="replace"), str(payload.get("model") or ""))
-                if isinstance(err, AccountError) or response.status_code not in RETRYABLE_STATUS or attempt == self.max_retries:
-                    raise err
+                        try:
+                            return await (self._assemble_response if responses else self._assemble)(response, payload.get("model", self.model))
+                        except BytePlusAPIError as e:   # an error event in the stream
+                            if not getattr(e, "retryable", False) or attempt == self.max_retries:
+                                raise
+                            err = e
+                    else:
+                        err = _api_error(response.status_code, (await response.aread()).decode(errors="replace"), str(payload.get("model") or ""))
+                        if isinstance(err, AccountError) or response.status_code not in RETRYABLE_STATUS or attempt == self.max_retries:
+                            raise err
                 last_error = err
             except (httpx.TimeoutException, httpx.TransportError, ssl.SSLError) as e:   # "record layer failure" mid-read too
                 if attempt == self.max_retries:
@@ -272,7 +327,7 @@ class BytePlusEngine(BaseEngine):
             except json.JSONDecodeError:
                 continue
             if data.get("error"):
-                raise BytePlusAPIError(500, json.dumps(data["error"])[:500])
+                raise _stream_error(data["error"])
             model = data.get("model") or model
             usage = data.get("usage") or usage
             for choice in data.get("choices") or []:
@@ -281,6 +336,38 @@ class BytePlusEngine(BaseEngine):
                     content.append(delta["content"])
                 finish = choice.get("finish_reason") or finish
         return {"model": model, "choices": [{"message": {"content": "".join(content)}, "finish_reason": finish}], "usage": usage}
+
+    @staticmethod
+    async def _assemble_response(response: httpx.Response, model: str) -> dict:
+        """A streamed Responses API reply as the reply body: the final event's response (status, output, usage), its text
+        rebuilt from the deltas when the final event did not come."""
+        deltas: list[str] = []
+        final: Optional[dict] = None
+        async for line in response.aiter_lines():
+            if not line.startswith("data:"):
+                continue   # "event: ..." lines name the type the data repeats
+            chunk = line[5:].strip()
+            if chunk == "[DONE]":
+                break
+            try:
+                event = json.loads(chunk)
+            except json.JSONDecodeError:
+                continue
+            kind = event.get("type")
+            if kind == "response.output_text.delta":
+                deltas.append(str(event.get("delta") or ""))
+            elif kind in ("response.completed", "response.incomplete", "response.failed") and isinstance(event.get("response"), dict):
+                final = event["response"]
+            elif kind == "error" or event.get("error"):
+                raise _stream_error(event.get("error") or event)
+        if final is None:
+            return {"model": model, "status": "incomplete", "incomplete_details": {"reason": "stream ended"},
+                    "output": [{"type": "message", "content": [{"type": "output_text", "text": "".join(deltas)}]}], "usage": {}}
+        if final.get("status") == "failed":
+            raise BytePlusAPIError(500, json.dumps({"error": final.get("error") or {"message": "response failed"}})[:500])
+        if not _response_text(final) and deltas:
+            final = {**final, "output": [{"type": "message", "content": [{"type": "output_text", "text": "".join(deltas)}]}]}
+        return final
 
     # ----------------------------------------------------------------- text
     @staticmethod
@@ -332,6 +419,14 @@ class BytePlusEngine(BaseEngine):
         config: Optional[GenerationConfig] = None,
     ) -> TextResponse:
         payload = self._text_payload(messages, config)
+        if self._prefix_cacheable(messages, config, payload):
+            try:
+                return await self._generate_cached(messages, payload)
+            except PrefixCacheError as e:
+                print(f"[BytePlus] explicit prefix cache unavailable for {payload['model']} ({str(e)[:200]}); using the chat API"
+                      + (" from now on" if e.permanent else " for this call"))
+                if e.permanent:
+                    self._prefix_off.add(payload["model"])
         long = payload["thinking"]["type"] == "enabled" or int(payload.get("max_tokens") or 0) >= STREAM_FROM_TOKENS
         data = await (self._post_stream if long else self._post)("/chat/completions", payload)
         choice = data["choices"][0]
@@ -353,6 +448,100 @@ class BytePlusEngine(BaseEngine):
             usage=counted,
             finish_reason=choice.get("finish_reason", ""),
         )
+
+    def _prefix_cacheable(self, messages: list[Message], config: Optional[GenerationConfig], payload: dict) -> bool:
+        """A call whose first message is a long shared prefix (``config.cache_prefix``: the paper) on a Seed model, with
+        text only and nothing the Responses API cannot take after a cached turn (json_schema, stop sequences)."""
+        model = str(payload.get("model") or "")
+        fmt = (payload.get("response_format") or {}).get("type")
+        return (bool(getattr(config, "cache_prefix", False)) and model.startswith(PREFIX_CACHE_MODELS) and model not in self._prefix_off
+                and len(messages) >= 2 and messages[0].role.value == "system" and len(messages[0].content or "") >= PREFIX_MIN_CHARS
+                and not any(m.images for m in messages) and not payload.get("stop") and fmt in (None, "json_object"))
+
+    async def _prefix_id(self, key: tuple, model: str, thinking: dict, prefix: str) -> str:
+        """The id of the explicit cache of ``prefix`` for this model and thinking mode (a cached head serves only calls with
+        the same thinking setting), created on first use and renewed before its hour runs out."""
+        async with self._prefix_locks.setdefault(key, asyncio.Lock()):
+            held = self._prefixes.get(key)
+            if held and held[1] - time.time() > 300:   # never start a call on a cache about to expire
+                return held[0]
+            if time.time() - self._prefix_failed.get(key, 0.0) < 300:   # the callers queued behind a failed creation
+                raise PrefixCacheError("creating the prefix cache failed a moment ago")
+            expire_at = int(time.time()) + PREFIX_CACHE_SECONDS
+            try:
+                data = await self._post("/responses", {"model": model, "input": [{"role": "system", "content": prefix}],
+                                                       "caching": {"type": "enabled", "prefix": True}, "thinking": thinking,
+                                                       "expire_at": expire_at})
+            except AccountError:
+                raise
+            except (BytePlusAPIError, RuntimeError) as e:   # after _post's retries: the chat API serves these calls
+                self._prefix_failed[key] = time.time()
+                if isinstance(e, BytePlusAPIError) and e.code.startswith("InvalidParameter"):
+                    raise PrefixCacheError(str(e), permanent=True) from e
+                raise PrefixCacheError(f"could not create the prefix cache: {e}") from e
+            usage = data.get("usage") or {}
+            self._count(model, {"prompt_tokens": usage.get("input_tokens", 0),
+                                "cached_tokens": (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)})
+            if not data.get("id"):
+                raise PrefixCacheError(f"no cache id in the reply: {str(data)[:200]}")
+            self._prefixes[key] = (str(data["id"]), float(expire_at))   # the expiry sent, not the time the reply came
+            return self._prefixes[key][0]
+
+    async def _generate_cached(self, messages: list[Message], payload: dict) -> TextResponse:
+        """``generate_text`` through the Responses API on the explicit cache of the first message: the rest of the messages
+        follow the cached turn, with the same model, thinking, sampling and JSON mode as the chat payload."""
+        model, thinking = str(payload["model"]), payload["thinking"]
+        prefix = messages[0].content
+        key = (model, thinking["type"], hashlib.sha256(prefix.encode("utf-8", "surrogatepass")).hexdigest())
+        body = {"model": model, "store": False, "thinking": thinking, "temperature": payload["temperature"], "top_p": payload["top_p"],
+                "input": [{"role": m.role.value, "content": m.content} for m in messages[1:]],
+                "max_output_tokens": min(MAX_OUTPUT_TOKENS, int(payload.get("max_tokens") or 4096) + (THINKING_HEADROOM if thinking["type"] == "enabled" else 0))}
+        if payload.get("reasoning_effort"):
+            body["reasoning"] = {"effort": payload["reasoning_effort"]}
+        if payload.get("response_format"):
+            body["text"] = {"format": {"type": "json_object"}}
+        long = thinking["type"] == "enabled" or int(payload.get("max_tokens") or 0) >= STREAM_FROM_TOKENS
+        for attempt in range(2):
+            try:
+                body["previous_response_id"] = await self._prefix_id(key, model, thinking, prefix)
+                data = await (self._post_stream if long else self._post)("/responses", body)
+                break
+            except AccountError as e:
+                if e.status == 401 or e.code.startswith(ACCOUNT_WIDE):
+                    raise
+                raise PrefixCacheError(str(e), permanent=True) from e   # the chat API raises it again if the model is refused there too
+            except BytePlusAPIError as e:
+                if "PreviousResponseNotFound" in e.code and attempt == 0:   # deleted or expired early: cache it again
+                    if self._prefixes.get(key, ("",))[0] == body["previous_response_id"]:   # not one another call just made
+                        self._prefixes.pop(key, None)
+                    continue
+                if e.code.startswith("InvalidParameter"):
+                    raise PrefixCacheError(str(e), permanent=True) from e
+                if 400 <= e.status < 500 and e.status not in RETRYABLE_STATUS and not isinstance(e, ContentFilteredError) \
+                        and "Sensitive" not in e.code:
+                    raise PrefixCacheError(str(e)) from e
+                raise   # rate limits after every retry, content refusals: the chat API would fail the same way
+        usage = data.get("usage") or {}
+        counted = {
+            "prompt_tokens": usage.get("input_tokens", 0) or 0,
+            "completion_tokens": usage.get("output_tokens", 0) or 0,
+            "total_tokens": usage.get("total_tokens", 0) or 0,
+            "reasoning_tokens": (usage.get("output_tokens_details") or {}).get("reasoning_tokens", 0) or 0,
+            "cached_tokens": (usage.get("input_tokens_details") or {}).get("cached_tokens", 0) or 0,
+        }
+        self._count(model, counted)
+        text = _response_text(data)
+        details = data.get("incomplete_details") or {}
+        reason = str(details.get("reason") or "")
+        if data.get("status") == "completed":
+            finish = "stop"
+        elif reason in ("length", "max_output_tokens"):
+            finish = "length"
+        else:
+            finish = "content_filter" if ("content_filter" in reason or details.get("content_filter")) else (reason or str(data.get("status") or ""))
+        if finish == "content_filter" and not text.strip():
+            raise ContentFilteredError(model)
+        return TextResponse(content=text, model=data.get("model", model), usage=counted, finish_reason=finish)
 
     def _count(self, model: str, usage: dict) -> None:
         mine = self.tokens.setdefault(model, {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0})
@@ -445,5 +634,11 @@ class BytePlusEngine(BaseEngine):
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
+            for rid, _expiry in list(self._prefixes.values()):   # stop the caches' storage (they would expire within the hour)
+                try:
+                    await self._client.delete(f"{self.base_url}/responses/{rid}", timeout=10.0)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._prefixes.clear()
             await self._client.aclose()
             self._client = None

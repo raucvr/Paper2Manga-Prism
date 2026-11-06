@@ -25,7 +25,7 @@ from PIL import Image, ImageDraw
 from services.fonts import (FT_LOCK, bold_stroke, has_glyph, is_emoji, is_han, load as load_font,
                             missing as missing_glyph, resolve as resolve_fonts)
 
-BOARD_KINDS = ("bar", "table", "flow", "compare", "list", "links")
+BOARD_KINDS = ("bar", "table", "flow", "compare", "list", "links", "diagram")
 
 # limits of the contract; board_problems() flags specs outside them, the renderers still cope
 LIMITS = {"bars": (2, 7), "columns": (1, 4), "rows": (1, 6), "steps": (2, 7), "side_items": (1, 4), "items": (2, 6),
@@ -46,6 +46,8 @@ BLUE = (38, 92, 175)
 RED = (208, 58, 46)
 GREY = (120, 128, 140)
 VALUE_GREY = (92, 100, 114)   # grey bars keep a darker value label: the numbers are the evidence
+# subtitles and footnotes: GREY on white is about 4:1 and readers found the small print too faint; this is about 7:1
+NOTE_GREY = (74, 82, 96)
 
 CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]")
 
@@ -240,6 +242,9 @@ def _fmt_decimal(d: Decimal, decimals: int) -> str:
 
 
 RATIO_FROM = 3   # a lower-is-better gap of this factor or more (or one between powers of ten) reads better as a ratio
+# a percentage or a share in the unit or the title, in both languages ("% of total attention", "总注意力百分比", "百分点", "占比",
+# "share", "probability"), never a percentile: those values fall in points, not by a factor
+_SHARE_UNIT_RE = re.compile(r"[%％]|\bpercent(?:age)?\b|\bpp\b|\bshare\b|\bprobabilit|百分|占比|比例|概率", re.I)
 
 
 def _sig2(d: Decimal) -> str:
@@ -249,14 +254,29 @@ def _sig2(d: Decimal) -> str:
     return str(int(q)) if q == q.to_integral_value() else format(q.normalize(), "f")
 
 
+# a gap stated as a multiple in a bar's quote ("52×", "50x", "3 times", "10-fold", "3倍"); ASCII bounds, so the number of a
+# Chinese text glued to its characters reads the same
+_MULTIPLE_RE = re.compile(r"(?<![A-Za-z0-9_.])(\d+(?:\.\d+)?)\s*(?:[×xX](?![A-Za-z0-9_])|times\b|-?fold\b|倍)")
+
+
+def _stated_multiple(b: dict, best: int, rival: int, ratio: Decimal) -> bool:
+    """The paper states this gap as a multiple in the quote of either bar: rl_1000_layers quoted "12.6 ... 649 ... 52×" and
+    its words said "52 times" while the badge drew "+636.4". Only the quotes count: they stay verbatim in every language,
+    so the Chinese chart draws the badge the English one draws (titles and notes are translated)."""
+    said = " ".join(str(b["bars"][i].get("quote") or "") for i in (best, rival))
+    return any(Decimal(m) >= 2 and abs(Decimal(m) - ratio) <= ratio / 20 for m in _MULTIPLE_RE.findall(said))   # never a "1.00×" reference
+
+
 def delta_badge(spec) -> Optional[dict]:
     """The gap a bar chart shows, computed here and never by the model: the best highlighted bar (the paper's) against the
     bar the script marks as the baseline ("baseline": true, the strongest earlier system the paper compares with). Without
     a marked baseline, or with more than one highlighted bar, there is no badge: the best other bar may belong to another
     setting (a semi-supervised result against a supervised one), and a computed gap would then be a claim the paper never
     makes.
-    A difference ("+2.04", the larger number of decimals of the two values) or, between powers of ten or for a lower-is-
-    better gap of RATIO_FROM times or more, a ratio ("≈1/5.2" when lower is better, "5.2×" when higher is better).
+    A difference ("+2.04", the larger number of decimals of the two values) or, between powers of ten, for a lower-is-
+    better gap of RATIO_FROM times or more, or for a gap a bar's quote states as a multiple ("52×"), a
+    ratio ("≈1/5.2" when lower is better, "5.2×" when higher is better); never between percentages, a share falls in
+    points ("dropped from 46.7% to 4.8%" beside "≈1/9.7" read as a second claim).
     {"text", "best": i, "rival": j, "better": bool, "kind": "diff" | "ratio"}, or None when there is no such pair, a value
     does not parse, the two values carry different units or notations, or they are equal."""
     b = normalize_board(spec)
@@ -279,7 +299,8 @@ def delta_badge(spec) -> Optional[dict]:
     better = (d > 0) == higher
     if better and a.value > 0 and o.value > 0:   # costs, times and powers of ten compare as ratios; scores as differences
         ratio = max(a.value, o.value) / min(a.value, o.value)
-        if a.exponent is not None or (not higher and ratio >= RATIO_FROM):
+        share = "%" in a.unit or bool(_SHARE_UNIT_RE.search(f"{b.get('unit') or ''} {b.get('title') or ''}"))
+        if a.exponent is not None or (not share and ((not higher and ratio >= RATIO_FROM) or _stated_multiple(b, best, rival, ratio))):
             n = _sig2(ratio) if ratio < 10 else format(ratio.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP).normalize(), "f")
             exact = Decimal(n) == ratio
             text = (f"{'' if exact else '≈'}1/{n}" if not higher else f"{'' if exact else '≈'}{n}×")
@@ -303,14 +324,22 @@ _KIND_ALIASES = {
     "histogram": "bar", "column_chart": "bar",
     "table": "table", "grid": "table", "matrix": "table",
     "flow": "flow", "flowchart": "flow", "flow_chart": "flow", "pipeline": "flow", "steps": "flow", "process": "flow",
-    "diagram": "flow", "architecture": "flow",
+    "architecture": "flow", "diagram": "diagram", "mechanism": "diagram", "schematic": "diagram",
     "compare": "compare", "comparison": "compare", "versus": "compare", "vs": "compare", "contrast": "compare",
     "before_after": "compare",
     "list": "list", "recap": "list", "summary": "list", "checklist": "list", "bullets": "list",
     "links": "links", "link": "links", "attention": "links", "arcs": "links",
 }
 _LOWER_BETTER_RE = re.compile(r"\b(?:lower|smaller|less|fewer)\s+is\s+better\b|越(?:低|小|少)越好", re.I)
+# a board that calls lower worse: econ_ai_service's call-duration chart said "lower = less effort (backfire)" over a printed
+# "lower is better" in two rounds
+_LOWER_WORSE_RE = re.compile(r"\b(?:lower|shorter|fewer|less)\s*(?:is|=|means)\s*(?:worse|bad)\b|\bless effort\s*\(?(?:backfire|counterproductive)|"
+                             r"越(?:低|短|少)(?:越差|[^，,；;。]{0,8}适得其反)", re.I)
 _DIRECTION_RE = re.compile(r"\b(?:higher|lower|smaller|larger|bigger|less|more|fewer)\s+is\s+better\b|越(?:高|低|小|大|少|多)越好", re.I)
+# significance stars after a number, or in a legend ("0.234*** (0.033)", "*** p<0.01", "*** <1%", "***: p<0.01",
+# "p<0.01 (***)", "*** significant at the 1% level"), are the paper's notation, not markdown bold (econ_ai_service's
+# legend "* <10%, *** <1%" was flagged as markdown in every round and left on the board)
+SIG_STARS_RE = re.compile(r"(?<=[\d)\]^])\*{1,3}|(?:^|(?<=[\s,;(]))\*{1,3}(?=\s*(?:p\s*[<≤=]|[<≤=:]|\)|significan))", re.I)
 _BULLET_RE = re.compile(r"^\s*(?:(?:[✅✓✔☑✗✘❌•·▪►*]|[\-–—](?!\.?\d))+\s*|(?:step\s*)?\d{1,2}\s*[.):：]\s+)", re.I)
 _SPLIT_STEPS_RE = re.compile(r"\s*(?:→|->|=>|⇒|\n)\s*")
 
@@ -389,6 +418,8 @@ def _indexes(value, labels: list[str]) -> list[int]:
 def _kind(spec: dict) -> str:
     raw = _s(_first(spec, "kind", "type", "board_type", "chart"))
     kind = _KIND_ALIASES.get(re.sub(r"[\s\-]+", "_", raw.lower()), "")
+    if kind == "diagram" and "elements" not in spec and "brief" not in spec and ("steps" in spec or "nodes" in spec):
+        return "flow"   # before diagrams were drawn, "diagram" named a flow of steps (scripts saved then still read)
     if kind or raw.lower() not in ("", "board", "exhibit", "figure", "whiteboard", "visual"):
         return kind
     for key, guess in (("bars", "bar"), ("rows", "table"), ("columns", "table"), ("steps", "flow"), ("left", "compare"),
@@ -411,7 +442,7 @@ def _normalize(spec) -> tuple[Optional[dict], list[str]]:
         out["subtitle"] = _s(spec["subtitle"])
     notes: list[str] = []
     body = {"bar": _norm_bar, "table": _norm_table, "flow": _norm_flow, "compare": _norm_compare, "list": _norm_list,
-            "links": _norm_links}[kind](spec, out, notes)
+            "links": _norm_links, "diagram": _norm_diagram}[kind](spec, out, notes)
     if body is None:
         return None, notes
     focus_from_source = kind == "links" and _first(spec, "from", "source_index", "focus", "query") is None
@@ -617,6 +648,11 @@ def _norm_links(spec: dict, out: dict, notes: list) -> Optional[dict]:
     return out
 
 
+def _norm_diagram(spec: dict, out: dict, notes: list) -> Optional[dict]:
+    from services import diagram   # imports this module
+    return diagram.normalize(spec, out, notes)
+
+
 def normalize_board(spec) -> Optional[dict]:
     """The canonical spec of a board the script LLM wrote (kind from 'type', numbers as strings, rows as {cells},
     highlight flags as booleans, bullets stripped), or None when nothing usable is left. Idempotent."""
@@ -660,7 +696,7 @@ def board_problems(spec) -> list[str]:
     def text(value: str, kind: str, where: str):
         if value and (msg := _too_long(value, kind)):
             out.append(f'{where} "{value}" is too long ({msg})')
-        if value and re.search(r"\$[^$]*\$|\\[a-zA-Z]|\*\*", value):
+        if value and re.search(r"\$[^$]*\$|\\[a-zA-Z]|\*\*", SIG_STARS_RE.sub("", value)):
             out.append(f'{where} "{value}" contains LaTeX or markdown; write plain text (10^19, O(n^2) are fine)')
 
     def count(n: int, key: str, what: str):
@@ -692,6 +728,9 @@ def board_problems(spec) -> list[str]:
         said = " ".join([board["title"], board.get("subtitle", ""), board.get("unit", "")])
         if board["higher_is_better"] and _LOWER_BETTER_RE.search(said):
             out.append("the title says lower is better but higher_is_better is true")
+        elif not board["higher_is_better"] and _LOWER_WORSE_RE.search(said) and not _LOWER_BETTER_RE.search(said):
+            out.append('the board calls lower worse ("lower = less effort (backfire)") but higher_is_better is false, so the chart '
+                       'prints "lower is better": set higher_is_better to true')
     elif kind == "table":
         count(len(board["columns"]), "columns", "columns")
         count(len(board["rows"]), "rows", "rows")
@@ -724,7 +763,20 @@ def board_problems(spec) -> list[str]:
         count(len(board["tokens"]), "tokens", "tokens")
         for i, t in enumerate(board["tokens"]):
             text(t, "token", f"token {i + 1}")
+    # a diagram's layout is the designer's to fix (diagram_problems, in StoryboarderV2.design_diagrams), never the writer's
     return out
+
+
+def diagram_problems(board: dict) -> list[str]:
+    """The layout lint of a diagram board (services.diagram.problems), measured with the default board fonts in the
+    language of its texts; [] while its elements are not designed."""
+    from services import diagram
+    lang = "zh" if any(CJK_RE.search(t) for _, t in diagram.texts(board)) else "en"
+    return diagram.problems(board, _Pen(default_fonts(), lang), _wrap_lines)
+
+
+def _wrap_lines(pen, text: str, max_w: float, size: float, bold: bool = False) -> list[str]:
+    return _lines(pen, text, max_w, size, bold, True)
 
 
 # ----------------------------------------------------------------------------- strings and numbers
@@ -779,6 +831,10 @@ def board_texts(spec) -> list[tuple[str, str]]:
     elif kind == "links":
         for i, x in enumerate(b["tokens"]):
             add(f"tokens.{i}", x)
+    elif kind == "diagram":
+        from services import diagram
+        for path, x in diagram.texts(b):
+            add(path, x)
     for k in ("note", "source"):
         add(k, b.get(k, ""))
     return out
@@ -963,9 +1019,9 @@ _NO_END = set("“‘（「『【《([{")
 _RUN_CHARS = "A-Za-z0-9\u00a0" + _SUP_CHARS + _SUB_CHARS
 _ZH_TOKEN_RE = re.compile(rf"(?:[\u2212+\-](?=\d))?[{_RUN_CHARS}][{_RUN_CHARS}.,+\-×·^%/'’_()]*|\s+|.", re.S)   # "−0.9" stays whole
 _TXT = {"en": {"higher": "higher is better", "lower": "lower is better", "illustrative": "illustration (example weights)",
-               "checked": "tick: shown in this manga · dot: has a number the story never shows", "unit": "unit: {}", "vs": "{} vs {}"},
+               "checked": "tick: a chart in this manga shows it", "unit": "unit: {}", "vs": "{} vs {}"},
         "zh": {"higher": "越高越好", "lower": "越低越好", "illustrative": "示意图（权重为举例）",
-               "checked": "打勾：漫画里展示过 · 圆点：有数字没在故事里出现", "unit": "单位：{}", "vs": "{} 相对 {}"}}
+               "checked": "打勾：漫画里有图表展示", "unit": "单位：{}", "vs": "{} 相对 {}"}}
 
 
 class _Pen:
@@ -1328,7 +1384,7 @@ def _tint(color, t: float = 0.62) -> tuple:
 
 
 def _header(c: _Ctx, b: dict) -> float:
-    """Title (bold, shrinks to fit, two lines at most) and subtitle (grey, wraps); returns the top of the content."""
+    """Title (bold, shrinks to fit, two lines at most) and subtitle (dark grey, wraps); returns the top of the content."""
     y, avail = c.m, c.W - 2 * c.m
     title = b.get("title", "")
     if title:
@@ -1340,12 +1396,12 @@ def _header(c: _Ctx, b: dict) -> float:
     if sub:
         hi = c.px(36 * c.u)
         size, lines = _fit_or_clip(c.pen, sub, avail, c.H * 0.3, hi, c.px(hi * 0.72), False, 4)
-        y += c.block(lines, c.m, y + 2 * c.u, size, False, GREY) + 2 * c.u
+        y += c.block(lines, c.m, y + 2 * c.u, size, False, NOTE_GREY) + 2 * c.u
     return y + (14 * c.u if title or sub else 0)
 
 
 def _footer(c: _Ctx, left: str, right: str) -> float:
-    """Grey footnotes on the bottom line (left: unit or note, right: source); returns the bottom of the content."""
+    """Dark grey footnotes on the bottom line (left: unit or note, right: source); returns the bottom of the content."""
     if not left and not right:
         return c.H - c.m
     avail, gap = c.W - 2 * c.m, 28 * c.u
@@ -1354,27 +1410,40 @@ def _footer(c: _Ctx, left: str, right: str) -> float:
         if c.pen.width(left, size) + c.pen.width(right, size) + (gap if left and right else 0) <= avail:
             cy = c.H - c.m - c.pen.lh(size) / 2
             if left:
-                c.line(left, c.m, cy, size, False, GREY)
+                c.line(left, c.m, cy, size, False, NOTE_GREY)
             if right:
-                c.line(right, c.W - c.m, cy, size, False, GREY, "right")
+                c.line(right, c.W - c.m, cy, size, False, NOTE_GREY, "right")
             return c.H - c.m - c.pen.lh(size) - 8 * c.u
     lh = c.pen.lh(lo)
     y = c.H - c.m - lh * (2 if left and right else 1)
     if left:
-        c.line(_clip(c.pen, left, avail, lo), c.m, y + lh / 2, lo, False, GREY)
+        c.line(_clip(c.pen, left, avail, lo), c.m, y + lh / 2, lo, False, NOTE_GREY)
     if right:
-        c.line(_clip(c.pen, right, avail, lo), c.W - c.m, c.H - c.m - lh / 2, lo, False, GREY, "right")
+        c.line(_clip(c.pen, right, avail, lo), c.W - c.m, c.H - c.m - lh / 2, lo, False, NOTE_GREY, "right")
     return y - 8 * c.u
 
 
 # ----------------------------------------------------------------------------- bar
+
+_BIN_RANGE_RE = re.compile(r"(?<![A-Za-z0-9.])\d+(?:\.\d+)?\s*[-–—~]\s*\d+(?:\.\d+)?(?![A-Za-z0-9.])")
+
+
+def _changes(b: dict) -> bool:
+    """Bars that are changes rather than scores: values on both sides of zero, or three or more bins of one quantity
+    ("Calls 1-3", "Calls 4-6", ...)."""
+    values = [v for v in (parse_value(x.get("value")) for x in b.get("bars") or []) if v is not None]
+    bins = len(b.get("bars") or []) >= 3 and all(_BIN_RANGE_RE.search(str(x.get("label") or "")) for x in b.get("bars") or [])
+    return bool(values) and min(values) < 0 < max(values) or bins   # a trend over "7B, 13B, 70B" keeps its direction
+
 
 def _bar_caption(b: dict, lang: str, badge: Optional[dict] = None) -> str:
     """The bar chart's footnote: unit · direction · what the badge measures. Readers took a lone "%" for a stray mark and
     could not tell which bar a "+2.40" badge was measured against (only a faint dashed line said so)."""
     unit = b.get("unit", "")
     said = " ".join([b.get("title", ""), b.get("subtitle", ""), unit])
-    direction = "" if _DIRECTION_RE.search(said) else _TXT[lang]["higher" if b.get("higher_is_better", True) else "lower"]
+    # a chart of changes (both signs, or bins of one quantity) has no better direction of its own: econ_ai_service's call
+    # durations printed "lower is better" in four rounds while the story called shorter calls lost effort
+    direction = "" if _DIRECTION_RE.search(said) or _changes(b) else _TXT[lang]["higher" if b.get("higher_is_better", True) else "lower"]
     shown = unit if re.search(r"[^\W\d_]", unit) else _TXT[lang]["unit"].format(unit) if unit else ""   # "BLEU" as is, "%" named
     rival = b["bars"][badge["rival"]].get("label", "") if badge else ""
     return " · ".join(x for x in (shown, direction, _TXT[lang]["vs"].format(badge["text"], rival) if rival else "") if x)
@@ -1685,7 +1754,8 @@ def _render_compare(c: _Ctx, b: dict) -> None:
 def _render_list(c: _Ctx, b: dict) -> None:
     top = _header(c, b)
     items, n = b["items"], len(b["items"])
-    # ticks and bullets mixed: say what each mark means (readers could not tell which lines counted as shown)
+    # ticks and bullets mixed: say what a tick means (readers could not tell which lines counted as shown); never what a
+    # bullet lacks: "dot: no chart here" read as the book admitting its gaps (round 23's blind judges, 3 of 7 books)
     legend = _TXT[c.lang]["checked"] if "checked" in b and not b.get("open") and len(b["checked"]) < n else ""
     bottom = _footer(c, " · ".join(x for x in (b.get("note", ""), legend) if x), b.get("source", ""))
     avail_w, avail_h = c.W - 2 * c.m, max(1.0, bottom - top)
@@ -1800,9 +1870,159 @@ def _render_links(c: _Ctx, b: dict) -> None:
                T, i == src, col, "center")
 
 
+# ----------------------------------------------------------------------------- diagram
+
+_TONE_RGB = {"ink": INK, "red": RED, "blue": BLUE, "grey": GREY}
+
+
+def _dashed(c: _Ctx, pts: list, width: int, color, dash: float) -> None:
+    """A dashed marker stroke through the points (dash and gap of about ``dash`` px)."""
+    carry, on = 0.0, True
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        seg = math.dist((x1, y1), (x2, y2))
+        pos = 0.0
+        while pos < seg:
+            step = min(dash - carry, seg - pos)
+            if on:
+                a, b = pos / seg if seg else 0, (pos + step) / seg if seg else 0
+                c.d.line([(x1 + (x2 - x1) * a, y1 + (y2 - y1) * a), (x1 + (x2 - x1) * b, y1 + (y2 - y1) * b)], fill=color, width=width)
+            pos += step
+            carry += step
+            if carry >= dash - 1e-6:
+                carry, on = 0.0, not on
+
+
+def _back(pts: list, length: float):
+    """The point ``length`` back along the stroke from its last point (or its first point): an arrowhead on a sampled
+    curve points along the curve, at full size, not along its last tiny step."""
+    left = length
+    for a, b in zip(reversed(pts), list(reversed(pts))[1:]):
+        d = math.dist(a, b)
+        if d >= left:
+            t = left / d if d else 0.0
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        left -= d
+    return pts[0]
+
+
+def _head(c: _Ctx, tip, frm, color, width: int) -> None:
+    ang = math.atan2(tip[1] - frm[1], tip[0] - frm[0])
+    head = min(18 * c.u, math.dist(tip, frm) * 0.6)
+    for da in (2.55, -2.55):
+        c.d.line([tip, (tip[0] + head * math.cos(ang + da), tip[1] + head * math.sin(ang + da))], fill=color, width=width)
+
+
+def _render_diagram(c: _Ctx, b: dict) -> None:
+    """The designer's elements on the diagram canvas (diagram.W x diagram.H), scaled into the board under its header: fills first, then
+    lines and arrows, marks, outlines and texts (services.diagram places every text, the same way its lint measured)."""
+    from services import diagram as D
+    top = _header(c, b)
+    bottom = _footer(c, b.get("note", ""), b.get("source", ""))
+    els = b.get("elements") or []
+    if not els:
+        return
+    avail_w, avail_h = int(c.W - 2 * c.m), int(max(1.0, bottom - top))
+    if avail_w < 8 or avail_h < 8:
+        return
+    placed = D.place(b, _Pen(c.pen.fonts, c.lang), _wrap_lines)
+    # the drawn content, not the whole canvas, fills the board (up to 1.5 times the canvas scale); what a kept design
+    # draws past the canvas is shrunk in with the rest, never cut at the board's edge ("26,070 qu")
+    x1, y1, x2, y2 = D.bounds(b, placed)
+    pad = 12.0
+    x1, y1, x2, y2 = x1 - pad, y1 - pad, x2 + pad, y2 + pad
+    full = min(avail_w / D.W, avail_h / D.H)
+    s = min(avail_w / max(1.0, x2 - x1), avail_h / max(1.0, y2 - y1), full * 1.5)
+    ox, oy = (avail_w - (x2 - x1) * s) / 2 - x1 * s, (avail_h - (y2 - y1) * s) / 2 - y1 * s
+    # drawn on a layer of the content area and pasted: nothing (a wobble, a text at the smallest size) reaches the edge
+    outer = c
+    c = _Ctx(Image.new("RGB", (avail_w, avail_h), (255, 255, 255)), outer.pen, _SEEDS["diagram"])
+    c.u, c.min_px = outer.u, outer.min_px
+
+    def P(x, y):
+        return (ox + x * s, oy + y * s)
+
+    # fills and outlines of boxes and circles, the biggest first: a box drawn around others (listed after them) never
+    # paints over them, and "none" is no fill at all (it was white, and a group box listed last erased what it held)
+    area = lambda e: e["w"] * e["h"] if e["type"] == "box" else math.pi * e["r"] ** 2 if e["type"] == "circle" else 0.0
+    for e in sorted((e for e in els if e["type"] in ("box", "circle")), key=area, reverse=True):
+        col = _TONE_RGB[e["tone"]]
+        fill = _tint(col, 0.86) if e.get("fill") == "tint" else col if e.get("fill") == "solid" else None
+        width = c.stroke(4.5 if e["tone"] == "red" else 3.5)
+        if e["type"] == "box":
+            x1, y1 = P(e["x"], e["y"])
+            x2, y2 = P(e["x"] + e["w"], e["y"] + e["h"])
+            if e.get("dashed"):
+                r = min(x2 - x1, y2 - y1) * 0.12
+                c.d.rounded_rectangle((x1, y1, x2, y2), radius=r, fill=fill)
+                _dashed(c, [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)], width, col, 14 * c.u)
+            else:
+                c.box((x1, y1, x2, y2), col, width, fill, radius=min(x2 - x1, y2 - y1) * 0.12)
+        elif e["type"] == "circle":
+            (cx, cy), r = P(e["x"], e["y"]), e["r"] * s
+            c.d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=fill)
+            ring = [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))) for a in range(0, 361, 12)]
+            (_dashed(c, ring, width, col, 12 * c.u) if e.get("dashed") else c.wob(ring, width, col, closed=False))
+    for e in els:   # lines and arrows
+        if e["type"] not in ("arrow", "line"):
+            continue
+        col, width = _TONE_RGB[e["tone"]], c.stroke(4.5 if e["tone"] == "red" else 3.5)
+        pts = [P(x, y) for x, y in D.path(e)]
+        if e.get("dashed"):
+            _dashed(c, pts, width, col, 14 * c.u)
+        else:
+            c.wob(pts, width, col)
+        if e["type"] == "arrow":   # a curve's head points along the curve; a straight leg's along its last leg
+            back = (lambda q: _back(q, 24 * c.u)) if e.get("curved") else (lambda q: next((x for x in reversed(q[:-1]) if x != q[-1]), q[0]))
+            if e["heads"] in ("end", "both"):
+                _head(c, pts[-1], back(pts), col, width)
+            if e["heads"] in ("start", "both"):
+                _head(c, pts[0], back(pts[::-1]), col, width)
+    for e in els:   # marks
+        if e["type"] != "mark":
+            continue
+        (cx, cy), size = P(e["x"], e["y"]), e["size"] * s
+        col, w = _TONE_RGB[e["tone"]], max(2, int(round(size * 0.13)))
+        x, top_y = cx - size / 2, cy - size / 2
+        if e["mark"] == "check":
+            c.d.line([(x, top_y + size * 0.55), (x + size * 0.38, top_y + size * 0.9), (x + size, top_y + size * 0.1)],
+                     fill=col, width=w, joint="curve")
+        else:
+            c.d.line([(x + size * 0.1, top_y + size * 0.1), (x + size * 0.9, top_y + size * 0.9)], fill=col, width=w)
+            c.d.line([(x + size * 0.9, top_y + size * 0.1), (x + size * 0.1, top_y + size * 0.9)], fill=col, width=w)
+    # what lies under a text: the smallest filled shape that holds it (a "none" shape shows what is under it), the
+    # text's own shape first; white text only on a solid fill, and never for a label, whose white halo it would vanish on
+    filled = sorted(((D._rect_of(e), e.get("fill")) for e in els if e["type"] in ("box", "circle") and e.get("fill") in ("tint", "solid")),
+                    key=lambda t: (t[0][2] - t[0][0]) * (t[0][3] - t[0][1]))
+
+    def under(i: int, rect) -> str:
+        e = els[i]
+        if e["type"] in ("box", "circle") and e.get("fill") in ("tint", "solid"):
+            return e["fill"]
+        return next((fill for r, fill in filled if D._inside(rect, r)), "none")
+    for p in placed:   # texts last, over everything
+        e = els[p.i]
+        size = max(c.min_px, p.size * s)
+        on_solid = p.role != "label" and under(p.i, p.rect if p.role in ("text", "label") else D._rect_of(e)) == "solid"
+        col = (255, 255, 255) if on_solid else _TONE_RGB[p.tone]
+        x1, y1 = P(p.rect[0], p.rect[1])
+        x2, y2 = P(p.rect[2], p.rect[3])
+        if p.role in ("box", "circle"):   # clipped to the shape's inside, not to the width measured at another size
+            r = D._rect_of(e)
+            k = 1.0 if e["type"] == "box" else 0.72
+            inner = (r[2] - r[0]) * k * s - 2 * 0.2 * size
+            lines = [_clip(c.pen, l, max(1.0, (x2 - x1) * 1.02 + 2, inner), size, p.bold) for l in p.lines]
+        else:
+            lines = p.lines
+        if p.role == "label":   # a white halo keeps a label readable where it sits on a line
+            pad = size * 0.12
+            c.d.rectangle((x1 - pad, y1, x2 + pad, y2), fill=(255, 255, 255))
+        c.block(lines, (x1 + x2) / 2, y1, size, p.bold, col, "center")
+    outer.img.paste(c.img, (int(outer.m), int(top)))
+
+
 _RENDERERS = {"bar": _render_bar, "table": _render_table, "flow": _render_flow, "compare": _render_compare,
-              "list": _render_list, "links": _render_links}
-_SEEDS = {"bar": 4, "table": 6, "flow": 7, "compare": 8, "list": 9, "links": 5}
+              "list": _render_list, "links": _render_links, "diagram": _render_diagram}
+_SEEDS = {"bar": 4, "table": 6, "flow": 7, "compare": 8, "list": 9, "links": 5, "diagram": 3}
 
 
 def render_board(spec, language: str, size: tuple[int, int], fonts: Optional[BoardFonts] = None) -> Image.Image:

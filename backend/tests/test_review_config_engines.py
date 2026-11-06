@@ -156,6 +156,7 @@ def test_w6_job_settings_come_from_the_parsed_manga_settings(config_file, monkey
         "layout": "single", "panel_width": 1024, "panel_height": 1536, "strip_width": 1536, "strip_height": 1120,
         "concurrency": 3, "qa_enabled": False, "qa_blind_check": True, "max_attempts": 1, "min_panels": 8, "max_panels": 12,
         "style_anchor": True, "fast": False, "output_format": "png", "pipeline": "v3", "bilingual": True,
+        "read_figures": True,
     }
 
 

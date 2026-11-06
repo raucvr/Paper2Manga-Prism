@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -36,7 +37,7 @@ PATH_SEP = " › "
 MAX_SECTION_CHARS = 40_000
 
 _TID = r"[A-Z]{1,3}\d{1,3}[a-z]?"
-REF_RE = re.compile(rf"@({_TID})\.r(\d+)\.c(\d+)(?![\w.])")                                   # a citation inside a text
+REF_RE = re.compile(rf"@({_TID})\.r(\d+)\.c(\d+)(?!\w|\.\d)")   # a citation inside a text, also before a full stop ("scores @T2.r2.c6.")
 CELL_RE = re.compile(rf"^\s*@?\s*({_TID})\s*\.\s*[rR]\s*(\d+)\s*\.\s*[cC]\s*(\d+)\s*$")         # a value that is only a citation
 _HEAD_RE = re.compile(rf"^\[({_TID})\] (.+?) \(page (\d+)\)(?:: (.*))?$")
 _COLS_RE = re.compile(rf"^\[({_TID})\] columns: (.*)$")
@@ -54,6 +55,7 @@ a an the of and or with without w o for on in to by from via vs
 model models method methods system systems approach baseline baselines ours our full proposed
 single ensemble ens base large big small tiny medium huge xl xxl mini
 standard prompting prompt finetuned fine tuned tuning pretrained trained training
+et al
 """.split())
 _SIZE_RE = re.compile(r"^\d+(?:\.\d+)?[kmbt]?$")
 ENSEMBLE_RE = re.compile(r"\bens(?:emble|embles|\.)?(?![a-z])", re.I)
@@ -132,6 +134,17 @@ def name_words(text: str) -> set[str]:
     """Lower-case words of a row or bar name without citations ([18]) and generic words."""
     s = _CITATION_RE.sub(" ", _prep(str(text or ""))).lower().replace("_", " ")
     return {w for w in _WORD_RE.findall(s) if w not in GENERIC}
+
+
+# rows of a regression table that are no systems: statistics ("Observations", "Bandwidth", "Adj. R²") and bins ("1–3")
+STAT_ROW_RE = re.compile(r"^\s*(?:observations?|obs\.?|n|bandwidth|clusters?|adj\W*r\W*2|r\W*2|controls?|[\w\s-]*\bfe|"
+                         r"(?:pre[\s-]?period|control|baseline|sample|dep(?:endent)?\.?\s*var(?:iable)?\.?)\s+mean)\s*$", re.I)
+BIN_ROW_RE = re.compile(r"^\s*[<>≤≥]?\s*\d+(?:\.\d+)?\s*(?:[–—-]\s*\d+(?:\.\d+)?|\+)?\s*%?\s*$")
+
+
+def _not_a_system(label: str) -> bool:
+    text = unicodedata.normalize("NFKC", str(label or "")).replace("²", "2")
+    return bool(STAT_ROW_RE.match(text) or BIN_ROW_RE.match(text))
 
 
 def _distinct(text: str) -> set[str]:
@@ -349,7 +362,14 @@ class Ledger:
         t = self._by_id[me.table]
         if ABLATION_RE.search(t.caption):
             return None
-        mine, ours = _distinct(me.label), bool(OURS_RE.search(me.label))
+        # the reader can write the setting into the row name ("Ours | WSJ only, discriminative"): the system is the part
+        # before it, and a rival's setting must be the same
+        tail = lambda label: label.rsplit(" | ", 1)[1].lower().strip() if " | " in label and SETTING_RE.search(label.rsplit(" | ", 1)[1]) else ""
+        system = lambda label: label.rsplit(" | ", 1)[0] if tail(label) else label
+        if _not_a_system(me.label):
+            return None   # a statistics row ("Observations") or a bin ("1–3") of a regression table
+        mine, ours = _distinct(system(me.label)), bool(OURS_RE.search(me.label))
+        my_setting = tail(me.label)
         if not mine and not ours:
             return None   # the cited row has no name to tell its variants from rivals ("base", "(A)")
         ensembles = bool(ENSEMBLE_RE.search(me.label) or ENSEMBLE_RE.search(context))
@@ -358,13 +378,41 @@ class Ledger:
         setting = self._settings(t, rows[me.row])
         sections = self._sections(t)
         home = sections.get(me.row, "")
+        # a table that repeats its systems per block (a section heading and its rule group: one per base model or bit
+        # width): the rival comes from the cited row's block (OnQ's Qwen3-8B chart was asked for a Qwen3-1.7B rival)
+        block = lambda r: (sections.get(r.n, ""), r.group)
+        blocks: dict = {}
+        for r in t.rows:
+            if r.cells:
+                blocks.setdefault(block(r), []).append(r)
+        same = lambda r: bool(mine & _distinct(system(r.label))) or (ours and bool(OURS_RE.search(r.label)))   # the cited system again
+        names = lambda r: {" ".join(r.label.lower().split())} | _distinct(r.label)
+        # the cited system's own words never make two blocks parallel (a table that lists the base model it builds on)
+        here = set().union(*(names(r) for r in blocks.get(block(rows[me.row]), []) if r.n != me.row)) - mine
+        # a block is parallel only when it repeats the cited system and shares its rivals' names (one shared word is no block)
+        parallel = {k for k, rs in blocks.items() if k != block(rows[me.row]) and any(same(r) for r in rs)
+                    and here & set().union(*(names(r) for r in rs))}
+        # rows under another section heading that repeats the cited system (OnQ's per-model "Full precision | 16/16" groups)
+        under = lambda sec: set().union(*(names(r) for r in t.rows if r.cells and r.n != me.row and sections.get(r.n, "") == sec)) - mine
+        base = lambda r: _distinct(OURS_RE.sub(" ", system(r.label)))
+        plug = lambda r: any(base(r) & _distinct(x.label) for x in t.rows
+                             if x.cells and x.n != r.n and not OURS_RE.search(x.label) and sections.get(x.n, "") == sections.get(r.n, ""))
+        repeated = {sec for sec in {sections.get(r.n, "") for r in t.rows if r.cells and r.n != me.row and same(r)} - {"", home}
+                    if under(home) & under(sec) or (ours and any(OURS_RE.search(r.label) and plug(r) == plug(rows[me.row]) for r in t.rows
+                                                                  if r.cells and r.n != me.row and sections.get(r.n, "") == sec))}
         best = None
         for c in self.column(me.table, me.col):
             if c.row == me.row or c.number is None:
                 continue
-            if mine & _distinct(c.label) or (ours and OURS_RE.search(c.label)):
+            if c.row in rows and block(rows[c.row]) in parallel or _not_a_system(c.label):
                 continue
+            if mine & _distinct(system(c.label)) or (ours and OURS_RE.search(c.label)):
+                continue
+            if my_setting and tail(c.label) and tail(c.label) != my_setting:
+                continue   # "X | WSJ only" against "Y | semi-supervised"
             there = sections.get(c.row, "")
+            if there in repeated:
+                continue
             if home and there == home and OURS_RE.search(home):
                 continue   # another row of the paper's own section ("Ours")
             if home != there and home and there and SETTING_RE.search(home) and SETTING_RE.search(there):

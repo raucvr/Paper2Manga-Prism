@@ -59,13 +59,15 @@ The same kind of reader also answers without the manga (closed book), which show
 | Papers | Reader | With the manga | Closed book |
 |---|---|---|---|
 | 4 from September and October 2026, newer than the readers' training data | Claude agents, strict grading | **90%** | 53% |
-| | Seed 2.0 Pro (`backend/tools/eval_quiz.py`) | **70%** | 21% |
+| | Seed 2.0 Pro (`backend/tools/eval_quiz.py`, mean of 3 runs) | **73%** | 28% |
 | 6 award papers (NeurIPS 2025 best papers, ICML 2026 outstanding papers) | Claude agents | 93% | 95% (they knew most of them) |
-| | Seed 2.0 Pro | **86%** | 21% |
+| | Seed 2.0 Pro | **84%** | 33% |
 | 2 famous papers (Attention Is All You Need, BERT) | Claude agents | 93% | 100% |
 
 The closed-book score is not zero because each question carries some of the abstract's context. On the four new
-papers the manga adds 37 points for Claude and 49 for Seed; on the award papers, which Seed did not know, it adds 65.
+papers the manga adds 37 points for Claude and 45 for Seed; on the award papers it adds 51 for Seed, which already
+knew parts of two of them. (The Seed figures were re-measured after a grading fix: closed-book answers had been capped
+at half marks, and the first published figures were 70% / 21% and 86% / 21%.)
 
 - Every number on a board (chart, table or list) and in the text was checked against the paper. 69 of the 95 chart
   bars were copied from a table cell that the extractor read with confidence 0.90 or more; the others come from the

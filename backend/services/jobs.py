@@ -34,8 +34,9 @@ from config_loader import as_int, get_config, PROJECT_ROOT
 from engines.base import GenerationConfig, ImageContent, Message
 from services.cast import build_cast
 from services.engine_select import Engines, build_engines, preflight as engine_preflight
-from services.panel_renderer import PanelRenderer, RenderResult
+from services.panel_renderer import PanelRenderer, RenderResult, art_shows
 from services.paper_extractor import PaperText, extract_paper, extract_text_only
+from services.paper_figures import add_figures
 from services.qa_judge import (MEANING_CRITICAL, PanelQA, QAResult, _canon, adopt_wording, agreed_alternatives, same_facts)
 from services.storyboarder_v2 import (LANG_NAMES, Chapter, PanelV2, StoryboardV2, StoryboarderV2, _has_script, coverage,
                                       extract_json, panel_range_for)
@@ -47,9 +48,10 @@ VALID_LANGUAGES = {"en-US", "zh-CN", "ja-JP"}
 VALID_LAYOUTS = {"single", "strip"}
 VALID_RANGES = {"auto", "short", "long"}
 MIN_TEXT_CHARS = 500
+FRAME_TRIES = 2   # drawings per frame of a teaching scene drawn as two frames (JobManager._two_frames)
 # what a failed redraw puts back, so the panel keeps its previous picture
 RESTORE_KEYS = ("status", "image_url", "width", "height", "qa", "strip_index", "strip_width", "strip_height", "art_url", "layout",
-                "image_urls")
+                "image_urls", "frames")
 LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
 
 
@@ -149,8 +151,11 @@ def _settings() -> dict:
         "output_format": config.output_settings.image_format,
         "pipeline": getattr(ms, "pipeline", "v3"),
         "bilingual": bool(getattr(ms, "bilingual", True)),
+        "read_figures": str(raw.get("read_figures", True)).strip().lower() not in ("false", "0", "no", "off"),
     }
 
+
+FIGURE_CACHE = "_figures"         # output/_figures: the vision model's readings of each PDF's figures, by file hash
 
 BILINGUAL = ("en-US", "zh-CN")   # a v3 job letters its (wordless) art in both; the job's own language comes first
 
@@ -180,6 +185,7 @@ class JobRuntime:
     renderer: Optional[PanelRenderer] = None
     qa: Optional[PanelQA] = None
     anchor: Optional[ImageContent] = None
+    props: dict = field(default_factory=dict)   # v3: book symbol -> its reference picture (props/prop_NN.jpg)
     fonts: object = None             # v3: lettering.FontSet
     pdf_bytes: Optional[bytes] = None
     text: Optional[str] = None
@@ -253,15 +259,19 @@ def _grounding_from_file(path: Path):
         return None
     return Grounding(size=tuple(data.get("size") or (0, 0)), heads={k: tuple(v) for k, v in (data.get("heads") or {}).items()},
                      board=[tuple(p) for p in data["board"]] if data.get("board") else None, bubbles=data.get("bubbles") or [],
-                     text_found=data.get("text_found") or [], extras=data.get("extras") or [], matches=data.get("matches") or {})
+                     text_found=data.get("text_found") or [], extras=data.get("extras") or [], matches=data.get("matches") or {},
+                     objects=[tuple(b) for b in data.get("objects") or [] if isinstance(b, (list, tuple)) and len(b) == 4])
 
 
 def _public_quiz(quiz: Optional[dict]) -> Optional[dict]:
-    """The abstract check on the visible manga text: score and which claims failed (the questions stay in storyboard.json)."""
+    """The abstract check on the visible manga text: score and which claims failed, the score before the revisions and
+    after each one (the questions stay in storyboard.json)."""
     if not quiz:
         return None
+    before = quiz.get("before") if isinstance(quiz.get("before"), dict) else {}
     return {"score": quiz.get("score"), "failed_claim_ids": list(quiz.get("failed_claim_ids") or []),
-            "questions": len(quiz.get("questions") or []), "error": quiz.get("error")}
+            "questions": len(quiz.get("questions") or []), "error": quiz.get("error"), "before": before.get("score"),
+            "rounds": [r.get("score") for r in quiz.get("rounds") or [] if isinstance(r, dict)], "undone": quiz.get("undone")}
 
 
 def _storyboard_from_dict(d: dict) -> StoryboardV2:
@@ -509,9 +519,10 @@ class JobManager:
         s, rt = job.state, job.rt
         settings = _settings()
         self._set_stage(job, "parsing", "Reading the PDF")
+        pdf = rt.pdf_bytes
         try:
-            if rt.pdf_bytes:
-                paper = await asyncio.to_thread(extract_paper, rt.pdf_bytes, 120_000, rt.filename)
+            if pdf:
+                paper = await asyncio.to_thread(extract_paper, pdf, 120_000, rt.filename)
             else:
                 paper = extract_text_only(rt.text or "", title=s["title"])
         finally:
@@ -519,10 +530,16 @@ class JobManager:
         if len(paper.body) < MIN_TEXT_CHARS:
             raise ValueError("Could not extract enough text from this PDF (is it scanned? try a text PDF)")
         s["title"] = s["title"] or paper.title or Path(rt.filename).stem or "Paper"
-        (job.dir / "paper.txt").write_text(paper.body, encoding="utf-8")   # with the ledger section: relayouts cite the same cells
+        rt.engines = build_engines()
+        if pdf and settings.get("read_figures", True):   # what the figures show joins the paper text every step reads
+            self._set_stage(job, "parsing", "Reading the paper's figures")
+            figs = await add_figures(paper, pdf, rt.engines.vision, cache_dir=self.output_dir / FIGURE_CACHE)
+            if figs:
+                (job.dir / "figures.json").write_text(json.dumps(figs, ensure_ascii=False, indent=1), encoding="utf-8")
+        del pdf
+        (job.dir / "paper.txt").write_text(paper.body, encoding="utf-8")   # with the figures and ledger sections: relayouts cite the same cells
         if paper.tables:
             (job.dir / "tables.json").write_text(json.dumps(paper.tables, ensure_ascii=False, indent=1), encoding="utf-8")
-        rt.engines = build_engines()
         rt.cast, rt.sheets = build_cast(s["theme"])
         writer = StoryboarderV2(rt.engines.text, rt.engines.fast_text, rt.engines.check, rt.engines.translate, cache_key=f"prism-{job.id}")
 
@@ -559,7 +576,12 @@ class JobManager:
             "skipped": list(writer.skipped),
             "lint_left": sum(len(v) for v in (english_sb.brief.get("lint") or {}).values()),
             "scrubbed": len(english_sb.brief.get("scrubbed") or []),
+            "reader_check": len(english_sb.brief.get("clarity") or []),   # stumbles the newcomer's read sent to a fix round
+            "board_check": len(english_sb.brief.get("board_check") or []),   # boards that did not back their words
+            "board_recheck": len(english_sb.brief.get("board_recheck") or []),   # ...and still did not once rewritten
+            "picture_check": len(english_sb.brief.get("picture_check") or []),   # picture plans that could not carry their point
             "unchecked_art": [],
+            "unchecked_idea": [],   # teaching scenes whose picture was published without a verdict on its idea
             # a role whose own model refused a text (content filter) or is not activated, done by the writer's model instead
             "fallbacks": sorted({note for e in (rt.engines.check, rt.engines.translate) for note in getattr(e, "fallbacks", [])}),
         }
@@ -584,7 +606,7 @@ class JobManager:
     async def _localize(self, job: Job, writer: StoryboarderV2, english: StoryboardV2, paper, language: str) -> StoryboardV2:
         """The English v3 script in another language: translation (board strings included, numbers locked), fit to the
         budgets, and the translation's fact-check against the paper. The panels and their art stay the same."""
-        from services.storyboarder_v2 import _finish_v3
+        from services.storyboarder_v2 import _finish_v3, lint_v3
         self._set_stage(job, "translating", f"Translating to {LANG_NAMES.get(language, language)}")
         sb = await writer.translate(copy.deepcopy(english), language)
         await writer.fit(sb, language)
@@ -593,6 +615,11 @@ class JobManager:
             await writer.fit(sb, language)
             if await writer.backport(english, sb, paper):   # what the check found in the translation, fixed in the English too
                 await writer.fit(english, "en-US")
+                found = lint_v3(english, paper.body, report=True)   # the English that ships changed after build_v3's last lint
+                english.brief["lint"] = {str(n): v for n, v in found.items()}
+                english.brief.setdefault("lint_trail", []).append(
+                    {"after": f"backport {language}", "panels": len(english.panels),
+                     "found": {str(n): [x[:90] for x in v] for n, v in sorted(found.items())}})
         _finish_v3(sb)
         return sb
 
@@ -643,6 +670,7 @@ class JobManager:
         settings = _settings()
         sem = asyncio.Semaphore(settings["concurrency"])
         groups = self._groups(job, only)
+        await self._ensure_props(job)
 
         async def worker(group: list[PanelV2]) -> None:
             async with sem:
@@ -670,6 +698,52 @@ class JobManager:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+
+    async def _ensure_props(self, job: Job) -> None:
+        """v3: one reference picture per picture symbol of the book (panel_renderer.PROP_PROMPT), drawn once before the
+        panels and saved in props/ (a redraw reuses it); every picture that draws a symbol gets its sheet beside the
+        character sheets, so the symbol looks the same in every panel. A sheet that cannot be drawn is left out."""
+        from services.storyboarder_v2 import _picture_symbols
+        rt, s = job.rt, job.state
+        if rt.storyboard is None or rt.renderer is None or not rt.renderer.text_free:
+            return
+        saved = {p.get("symbol"): p.get("file") for p in s.get("props") or [] if isinstance(p, dict)}
+        record = []
+        for i, (_concept, symbol) in enumerate(_picture_symbols(rt.storyboard)):
+            if rt.cancel.is_set():
+                return
+            name = saved.get(symbol) or f"props/prop_{i:02d}.jpg"
+            path = job.dir / name
+            if symbol not in rt.props and path.exists():
+                rt.props[symbol] = ImageContent.from_base64(base64.b64encode(path.read_bytes()).decode("ascii"), "image/jpeg")
+            if symbol not in rt.props:
+                s["stage_message"] = f"Drawing the book's symbols ({i + 1})"
+                try:
+                    result = await rt.renderer.render_prop(symbol)
+                    raw, _w, _h = self._decode_image(result.image)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001  (the panels are drawn without this sheet)
+                    if getattr(e, "account", False):
+                        raise
+                    print(f"[Job {job.id}] the sheet of symbol {symbol!r} could not be drawn: {type(e).__name__}: {str(e)[:200]}")
+                    continue
+                s["cost"]["images_generated"] += 1
+                s["cost"]["image_tokens"] += int((result.usage or {}).get("output_tokens", 0) or 0)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                self._write_atomic(path, raw)
+                rt.props[symbol] = ImageContent.from_base64(base64.b64encode(raw).decode("ascii"), "image/jpeg")
+            record.append({"symbol": symbol, "file": name})
+        s["props"] = record
+        self._persist(job)
+
+    def _props_of(self, job: Job, panel: PanelV2) -> list[tuple[str, ImageContent]]:
+        """(symbol, reference picture) of the book symbols this picture's plan draws."""
+        from services.storyboarder_v2 import drawn_symbols
+        rt = job.rt
+        if not rt.props or rt.storyboard is None:
+            return []
+        return [(sym, rt.props[sym]) for sym in drawn_symbols(rt.storyboard, f"{panel.visual} {panel.shows}") if sym in rt.props]
 
     def _panel_entry(self, job: Job, n: int) -> dict:
         return next(p for p in job.state["panels"] if p["n"] == n)
@@ -845,66 +919,22 @@ class JobManager:
         entry = self._panel_entry(job, panel.n)
         snapshot = dict(entry)
         base_attempts = int(entry.get("attempts") or 0)
-        best: Optional[tuple] = None   # (rank, result, raw, art, grounding, problems)
-        feedback, last_error, made = None, None, 0
-        for attempt in range(1, settings["max_attempts"] + 1):
-            if rt.cancel.is_set():
-                break
-            made = attempt
-            entry["status"], entry["error"] = "rendering", None
-            s["stage_message"] = self._drawing_message(job, [panel], attempt)
-            self._persist(job)
-            try:
-                result = await rt.renderer.render_panel(panel, feedback=feedback)
-                raw, _w, _h = self._decode_image(result.image)
-                art = Image.open(io.BytesIO(raw)).convert("RGB")
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                if getattr(e, "account", False):   # an inactive model or no balance: every other panel would fail the same way
-                    raise
-                last_error = f"{type(e).__name__}: {str(e)[:300]}"
-                print(f"[Job {job.id}] panel {panel.n} attempt {attempt} failed: {last_error}")
-                if "PolicyViolation" in last_error or "SensitiveContent" in last_error:
-                    feedback = ("the previous attempt was blocked by the content filter for possible similarity to copyrighted material: "
-                                + ("draw only the original characters from the reference sheets" if rt.sheets else
-                                   "draw simple original mascots that follow the descriptions above")
-                                + ", with no logos, brands, celebrities or existing cartoon characters")
-                continue
-            s["cost"]["images_generated"] += 1
-            s["cost"]["image_tokens"] += int((result.usage or {}).get("output_tokens", 0) or 0)
-            entry["status"] = "qa"
-            self._persist(job)
-            usage: dict = {}
-            unchecked = False
-            try:
-                grounding = await art_check.locate(rt.engines.vision, result.image, rt.cast, panel.characters, rt.sheets,
-                                                   usage=usage, size=art.size)
-                problems = art_check.art_problems(grounding, panel, art)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001  (a new drawing cannot fix the vision call: keep this paid art, lettered blind)
-                if getattr(e, "account", False):   # the vision model is not usable at all: stop instead of lettering every panel blind
-                    raise
-                print(f"[Job {job.id}] panel {panel.n} attempt {attempt}: the art could not be checked: {type(e).__name__}: {str(e)[:200]}")
-                grounding, problems, unchecked = None, [f"unchecked: the art could not be checked ({type(e).__name__})"], True
-                quality = s.setdefault("quality", {}).setdefault("unchecked_art", [])
-                if panel.n not in quality:
-                    quality.append(panel.n)
-            self._add_text_usage(job, usage)
-            rank = art_check.rank_key(problems)
-            print(f"[Job {job.id}] panel {panel.n} attempt {attempt}: problems={problems[:3]}")
-            if best is None or rank > best[0]:
-                best = (rank, result, raw, art, grounding, problems)
-            if not problems or unchecked:
-                break
-            feedback = "; ".join(problems[:4])
+        # a teaching scene gets one try more: its picture must also show the idea (the first picture books left 5-11
+        # scenes per book with the idea unclear after 3 tries)
+        teaching = bool(art_shows(panel)) and not art_check.is_board_panel(panel)
+        best, made, last_error = await self._draw_attempts(job, panel, settings["max_attempts"] + (1 if teaching else 0))
+        frames = None
+        if best is not None and teaching and not rt.cancel.is_set() and any(str(p).startswith(art_check.IDEA_LABELS) for p in best[5]):
+            framed, extra = await self._two_frames(job, panel, best)
+            made += extra
+            if framed is not None:
+                best, frames = framed
         if best is None:
             self._settle_failed_group(job, [panel], [snapshot], last_error or ("cancelled" if rt.cancel.is_set() else "generation failed"))
             if made:
                 entry["attempts"], entry["render_attempts"] = base_attempts + made, made
             return
-        _rank, result, raw, art, grounding, problems = best
+        _rank, result, raw, art, grounding, problems, idea_unchecked = best
         art_name = f"art_{panel.n:02d}.jpg"
         self._write_atomic(job.dir / art_name, raw)   # the drawing as Seedream made it: re-lettering never pays for art again
         self._write_atomic(job.dir / f"grounding_{panel.n:02d}.json",   # ...nor for the vision call that located the cast
@@ -928,12 +958,167 @@ class JobManager:
                       "qa": {"available": True, "score": 10.0 if not problems else max(1.0, 9.0 - 2 * len(problems)),
                              "text_exact": None, "text_total": None, "issues": problems[:6]},
                       "attempts": base_attempts + made, "render_attempts": made})
+        # a picture drawn as two frames says so (their plans and problems); a redraw as one picture drops the record
+        two = s.setdefault("quality", {}).setdefault("two_frames", [])
+        if frames:
+            entry["frames"] = [{k: v for k, v in f.items() if k != "prompt"} for f in frames]
+            if panel.n not in two:
+                two.append(panel.n)
+        else:
+            entry.pop("frames", None)
+            if panel.n in two:
+                two.remove(panel.n)
+        # the job record lists the published teaching pictures whose idea was never judged (the check failed, or the art
+        # could not be located at all); a redraw whose idea was judged leaves the list
+        unjudged = s.setdefault("quality", {}).setdefault("unchecked_idea", [])
+        if idea_unchecked or (grounding is None and art_shows(panel) and not art_check.is_board_panel(panel)):
+            if panel.n not in unjudged:
+                unjudged.append(panel.n)
+        elif panel.n in unjudged:
+            unjudged.remove(panel.n)
         try:   # prompts.jsonl is a log: failing to append to it must not undo a published picture
             with (job.dir / "prompts.jsonl").open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(_clean({"panels": [panel.n], "problems": problems, "seconds": result.seconds, "prompt": result.prompt}),
-                                    ensure_ascii=False) + "\n")
+                for prompt in [f["prompt"] for f in frames] if frames else [result.prompt]:
+                    fh.write(json.dumps(_clean({"panels": [panel.n], "problems": problems, "seconds": result.seconds, "prompt": prompt}),
+                                        ensure_ascii=False) + "\n")
         except OSError as e:
             print(f"[Job {job.id}] could not log the prompt of panel {panel.n}: {e}")
+
+    async def _draw_attempts(self, job: Job, panel: PanelV2, tries: int, size: Optional[tuple[int, int]] = None,
+                             what: str = "") -> tuple[Optional[tuple], int, Optional[str]]:
+        """Up to ``tries`` drawings of one picture (``panel``'s art, or one frame of it at ``size``): each is located and
+        checked, each retry is told the last one's problems. Returns (the best attempt or None, drawings asked for, the
+        last error); the best is (rank, result, raw, art, grounding, problems, idea_unchecked)."""
+        from services import art_check
+        s, rt = job.state, job.rt
+        entry = self._panel_entry(job, panel.n)
+        best: Optional[tuple] = None
+        feedback, last_error, made = None, None, 0
+        props = self._props_of(job, panel)
+        for attempt in range(1, tries + 1):
+            if rt.cancel.is_set():
+                break
+            made = attempt
+            entry["status"], entry["error"] = "rendering", None
+            s["stage_message"] = self._drawing_message(job, [panel], attempt)
+            self._persist(job)
+            try:
+                result = await rt.renderer.render_panel(panel, feedback=feedback, size=size, props=props)
+                raw, _w, _h = self._decode_image(result.image)
+                art = Image.open(io.BytesIO(raw)).convert("RGB")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                if getattr(e, "account", False):   # an inactive model or no balance: every other panel would fail the same way
+                    raise
+                last_error = f"{type(e).__name__}: {str(e)[:300]}"
+                print(f"[Job {job.id}] panel {panel.n}{what} attempt {attempt} failed: {last_error}")
+                if "PolicyViolation" in last_error or "SensitiveContent" in last_error:
+                    feedback = ("the previous attempt was blocked by the content filter for possible similarity to copyrighted material: "
+                                + ("draw only the original characters from the reference sheets" if rt.sheets else
+                                   "draw simple original mascots that follow the descriptions above")
+                                + ", with no logos, brands, celebrities or existing cartoon characters")
+                continue
+            s["cost"]["images_generated"] += 1
+            s["cost"]["image_tokens"] += int((result.usage or {}).get("output_tokens", 0) or 0)
+            entry["status"] = "qa"
+            self._persist(job)
+            usage: dict = {}
+            unchecked = idea_unchecked = False
+            try:
+                grounding = await art_check.locate(rt.engines.vision, result.image, rt.cast, panel.characters, rt.sheets,
+                                                   usage=usage, size=art.size)
+                problems = art_check.art_problems(grounding, panel, art)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001  (a new drawing cannot fix the vision call: keep this paid art, lettered blind)
+                if getattr(e, "account", False):   # the vision model is not usable at all: stop instead of lettering every panel blind
+                    raise
+                print(f"[Job {job.id}] panel {panel.n}{what} attempt {attempt}: the art could not be checked: {type(e).__name__}: {str(e)[:200]}")
+                grounding, problems, unchecked = None, [f"unchecked: the art could not be checked ({type(e).__name__})"], True
+                quality = s.setdefault("quality", {}).setdefault("unchecked_art", [])
+                if panel.n not in quality:
+                    quality.append(panel.n)
+            shows = art_shows(panel)   # a teaching scene's idea exactly as the art prompt asked for it
+            if grounding is not None and shows and not art_check.is_board_panel(panel):
+                try:   # a teaching scene: does the picture alone show its idea? (a failed verdict never blocks the art)
+                    idea, grounding.objects = await art_check.check_idea(rt.engines.vision, result.image, shows, art.size, usage=usage)
+                    if idea:
+                        problems.append(idea)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    if getattr(e, "account", False):
+                        raise
+                    print(f"[Job {job.id}] panel {panel.n}{what} attempt {attempt}: the idea check failed: {type(e).__name__}: {str(e)[:200]}")
+                    idea_unchecked = True
+            self._add_text_usage(job, usage)
+            # an idea never judged ranks like an unclear one: a real "yes" beats it, a real "no" does not (no redraw is paid for it)
+            rank = art_check.rank_key(problems + ([f"{art_check.IDEA_LABELS[1]} (not checked)"] if idea_unchecked else []))
+            print(f"[Job {job.id}] panel {panel.n}{what} attempt {attempt}: problems={problems[:3]}")
+            if best is None or rank > best[0]:
+                best = (rank, result, raw, art, grounding, problems, idea_unchecked)
+            if not problems or unchecked:
+                break
+            feedback = "; ".join(problems[:4])
+        return best, made, last_error
+
+    async def _two_frames(self, job: Job, panel: PanelV2, single: tuple) -> tuple[Optional[tuple], int]:
+        """A teaching scene whose best picture still misses its idea, drawn as two frames stacked in its panel (see
+        panel_renderer.TWO_FRAMES_PROMPT): the writer plans them, each frame gets up to FRAME_TRIES drawings with the same
+        checks, and the two best are stacked at the single picture's size. Returns ((best, frames) or None, drawings asked
+        for); None keeps the single picture: no plan, a frame without a drawing, or frames with more character, figure or
+        drawn-text problems than it."""
+        from services import art_check
+        from services.panel_renderer import frame_size, parse_two_frames, two_frames_prompt
+        from services.storyboarder_v2 import _stages
+        rt = job.rt
+        art, problems = single[3], single[5]
+        config = GenerationConfig(temperature=0.4, max_tokens=4000, response_format={"type": "json_object"})
+        try:
+            response = await rt.engines.text.generate_text([Message.user(two_frames_prompt(panel, problems))], config)
+            self._add_text_usage(job, response.usage or {})
+            parts = parse_two_frames(extract_json(response.content or ""))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001  (the single picture stays)
+            if getattr(e, "account", False):
+                raise
+            print(f"[Job {job.id}] panel {panel.n}: no two-frame plan: {type(e).__name__}: {str(e)[:200]}")
+            return None, 0
+        if not parts:
+            print(f"[Job {job.id}] panel {panel.n}: no two-frame plan in the reply")
+            return None, 0
+        frames = []
+        for part in parts:
+            frame = copy.deepcopy(panel)
+            frame.visual, frame.shows = part["visual"], part["shows"]
+            frame.characters = [c for c in panel.characters if _stages(c, f"{frame.visual} {frame.shows}")]
+            frame.emotions = {k: v for k, v in panel.emotions.items() if k in frame.characters}
+            frames.append(frame)
+        if not all(art_shows(f) for f in frames):   # a frame whose idea cannot be judged never replaces a judged picture
+            print(f"[Job {job.id}] panel {panel.n}: a frame of the plan has no idea to show; the single picture stays")
+            return None, 0
+        drawn, made = [], 0
+        for where, frame in zip(("top", "bottom"), frames):
+            best, n, _ = await self._draw_attempts(job, frame, FRAME_TRIES, size=frame_size(art.size), what=f" ({where} frame)")
+            made += n
+            if best is None or rt.cancel.is_set():
+                return None, made
+            drawn.append((where, frame, best))
+        frame_problems = [f"{p} ({where} frame)" for where, _, b in drawn for p in b[5]]
+        if art_check.rank_key(frame_problems)[:4] < art_check.rank_key(problems)[:4]:
+            print(f"[Job {job.id}] panel {panel.n}: the two frames have worse problems than the single picture; it stays")
+            return None, made
+        composite, grounding = art_check.compose_frames([b[3] for _, _, b in drawn], [b[4] for _, _, b in drawn], art.size)
+        buf = io.BytesIO()
+        composite.save(buf, format="JPEG", quality=92)
+        best = (art_check.rank_key(frame_problems), drawn[-1][2][1], buf.getvalue(), composite, grounding, frame_problems,
+                any(b[6] for _, _, b in drawn))
+        frames = [{"where": where, "visual": f.visual, "shows": f.shows, "characters": list(f.characters), "issues": b[5][:4],
+                   "prompt": b[1].prompt} for where, f, b in drawn]
+        print(f"[Job {job.id}] panel {panel.n}: drawn as two frames, problems={frame_problems[:3]}")
+        return (best, frames), made
 
     def _write_lettered(self, job: Job, n: int, lettered: dict) -> dict:
         """Write panel n's lettered pictures ({language: (image, layout)}); returns {language: url}. The job's own language
@@ -948,6 +1133,31 @@ class JobManager:
                 self._write_atomic(job.dir / f"layout_{n:02d}.{lang}.json", json.dumps(lay, ensure_ascii=False).encode("utf-8"))
             urls[lang] = f"/output/{job.id}/{name}"
         return urls
+
+    async def _recap_evidence(self, job: Job, english) -> None:
+        """Which chart or table shows each recap line, for a job built before the build asked (StoryboarderV2.recap_evidence:
+        one text call, its cost counted, the verdict kept in the script's brief); the program's rule decides when the call
+        cannot run. Without it a relayout re-marked every line by the rule alone: 342 ticks went in 144 saved jobs, "Found a
+        strong Artificial Hivemind effect" among them, beside its two charts."""
+        from services.storyboarder_v2 import StoryboarderV2
+        own = job.rt.engines is None
+        try:
+            engines = job.rt.engines or build_engines()
+        except Exception as e:  # noqa: BLE001  (no key, no config: the rule decides)
+            print(f"[Job {job.id}] recap evidence skipped: {type(e).__name__}: {e}")
+            return
+        try:
+            writer = StoryboarderV2(engines.text, engines.fast_text, engines.check, engines.translate, cache_key=f"prism-{job.id}")
+            await writer.recap_evidence(english)
+            self._add_text_usage(job, writer.usage)
+        except Exception as e:  # noqa: BLE001  (an account error, a broken reply: the rule decides)
+            print(f"[Job {job.id}] recap evidence skipped: {type(e).__name__}: {e}")
+        finally:
+            if own:
+                try:
+                    await engines.close()
+                except Exception:  # noqa: BLE001
+                    pass
 
     async def relayout(self, job_id: str) -> Optional[dict]:
         """Re-letter every drawn panel of a finished v3 job from its saved art and grounding with the current lettering and
@@ -965,16 +1175,36 @@ class JobManager:
         if rt.storyboard is None:
             rt.storyboard = _storyboard_from_dict(json.loads((job.dir / "storyboard.json").read_text(encoding="utf-8")))
         self._load_scripts(job)
-        from services.storyboarder_v2 import _honest_recap
-        scripts = {id(x): x for x in [rt.storyboard, *rt.storyboards.values()] if x is not None}
-        for script in scripts.values():   # the recap's ticks follow the current rule too (a board rule: no model call)
-            _honest_recap(script, retitle=False)
+        from services.storyboarder_v2 import _honest_recap, copy_recap_marks
+        # the recap's ticks follow the current rule too, judged on the English script and copied line by line to the
+        # translations, as a build does; a job built before the chart-evidence check gets its verdict once (one text
+        # call, kept in the script), after that the rule needs no model call
+        scripts = {lang: x for lang, x in [(s["language"], rt.storyboard), *rt.storyboards.items()] if x is not None}
+        english = scripts.get("en-US")
+        if english is not None and "recap_evidence" not in english.brief:
+            await self._recap_evidence(job, english)
+        if english is not None:
+            _honest_recap(english)
+        for lang, script in scripts.items():
+            if script is english:
+                continue
+            if english is not None:
+                copy_recap_marks(english, script, lang)
+            else:
+                _honest_recap(script, retitle=False)
         self._write_atomic(job.dir / "storyboard.json", json.dumps(_clean(rt.storyboard.to_dict()), ensure_ascii=False,
                                                                      indent=1).encode("utf-8"))
         for lang, other in rt.storyboards.items():
             if lang != s["language"] and other is not None:
                 self._write_atomic(job.dir / f"storyboard.{lang}.json", json.dumps(_clean(other.to_dict()), ensure_ascii=False,
                                                                                   indent=1).encode("utf-8"))
+        for entry in s["panels"]:   # the reader's text under each picture follows the scripts (a retitled recap, its marks)
+            try:
+                entry["board"] = self._panel_in(job, s["language"], entry["n"]).board
+                if entry.get("texts"):
+                    entry["texts"] = {lang: _panel_texts(self._panel_in(job, lang, entry["n"])) for lang in entry["texts"]}
+            except KeyError:
+                continue
         fonts, languages, count = lettering.FontSet(), s.get("languages") or [s["language"]], 0
         for entry in s["panels"]:
             art_path = job.dir / f"art_{entry['n']:02d}.jpg"

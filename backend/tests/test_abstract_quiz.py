@@ -286,6 +286,39 @@ async def test_make_questions_keeps_the_first_quiz_when_the_retry_fails():
         await aq.make_questions(Fake(queue(RuntimeError("down"))), CLAIMS)
 
 
+ABSTRACT_3 = ("Recurrent models read one word at a time. We propose the Transformer, based solely on attention mechanisms. "
+              "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best "
+              "results, including ensembles, by over 2 BLEU.")
+
+
+def test_quiz_prompt_asks_for_every_abstract_sentence_and_every_fact():
+    prompt = aq.quiz_prompt(CLAIMS, ABSTRACT_3)
+    assert "S1: Recurrent models read one word at a time." in prompt and "S3: Our model achieves 28.4 BLEU" in prompt
+    assert "Every sentence S1-S3 gets at least one question" in prompt and "gets one question that asks for the whole list" in prompt
+    assert '"sentences": [1]' in prompt
+    assert aq._quiz_size(3, 3) == (6, 12) and aq._quiz_size(8, 14) == (14, 20)   # one per sentence at least, 20 at most
+    assert '"sentences"' not in aq.quiz_prompt(CLAIMS, "")   # no abstract: the claims alone, as before
+
+
+async def test_make_questions_retries_until_every_sentence_is_asked_and_maps_claims_from_sentences():
+    asked = [{"sentences": ["S2"], "claim_ids": [0], "question": f"What is the Transformer based on ({i})?", "answer": "only attention"}
+             for i in range(3)] + [
+            {"sentences": [3], "claim_ids": [1], "question": "What BLEU on WMT 2014 English-to-German?", "answer": "28.4 BLEU"},
+            {"sentences": [3], "claim_ids": [2], "question": "What BLEU on English-to-French?", "answer": "41.8 BLEU"},
+            {"sentences": [3], "question": "By how much over the existing best results?", "answer": "by over 2 BLEU, including ensembles"}]
+    first = {"questions": asked}   # S1 (how recurrent models read) has no question
+    second = {"questions": asked + [{"sentences": ["S1"], "claim_ids": [], "question": "How do recurrent models read a sentence?",
+                                     "answer": "one word at a time"}]}
+    engine = Fake(queue(first, second))
+    claims = CLAIMS + [{"id": 3, "text": "Recurrent models read word by word.", "quote": "Recurrent models read one word at a time."}]
+    questions = await aq.make_questions(engine, claims, ABSTRACT_3)
+    assert "sentences without a question: S1" in engine.prompts[1]
+    by = {q["question"]: q for q in questions}
+    assert by["By how much over the existing best results?"]["claim_ids"] == [1]   # no ids given: the claim its sentence holds
+    assert by["How do recurrent models read a sentence?"]["sentences"] == [1] and by["How do recurrent models read a sentence?"]["claim_ids"] == [3]
+    assert {k for q in questions for k in q["sentences"]} == {1, 2, 3}
+
+
 async def test_make_questions_without_claims_or_usable_questions_raises():
     with pytest.raises(ValueError):
         await aq.make_questions(Fake(queue()), [])
@@ -299,7 +332,7 @@ async def test_reader_sees_only_the_transcript_and_never_the_gold_answers():
     questions = [{"id": "Q1", "claim_ids": [1], "question": "What BLEU did it reach on English-to-German?", "answer": "GOLD-ANSWER-1"},
                  {"id": "Q2", "claim_ids": [2], "question": "How long did it train?", "answer": "GOLD-ANSWER-2"}]
     reader = Fake(queue({"answers": [{"id": "1", "answer": "28.4 BLEU", "panels": ["Panel 2", 7, "7"]}]},
-                        {"answers": [{"id": "Q2", "answer": "Not shown.", "panels": [3]}]}))
+                        {"answers": [{"id": "Q1", "answer": "Not shown.", "panels": [3]}]}))   # each call numbers its own questions
     text = aq.transcript(make_sb())
     answers = await aq.answer_questions(reader, text, questions)
     assert answers == [{"id": "Q1", "answer": "28.4 BLEU", "panels": [2, 7]}, {"id": "Q2", "answer": "Not shown.", "panels": []}]
@@ -308,7 +341,7 @@ async def test_reader_sees_only_the_transcript_and_never_the_gold_answers():
     assert "answer ONLY from the manga text" in first and "outside knowledge" in first and '"not shown"' in first
     assert '"[gap to X: +2.04]" is the difference the chart marks' in first   # the badge in the transcript is explained
     assert text in first and "GOLD-ANSWER" not in first
-    assert items_of(reader.prompts[1], "QUESTIONS:\n") == [{"id": "Q2", "question": "How long did it train?"}]   # only the skipped one
+    assert items_of(reader.prompts[1], "QUESTIONS:\n") == [{"id": "Q1", "question": "How long did it train?"}]   # only the skipped one
     config = reader.calls[0][1]
     assert config.temperature == 0 and config.response_format == {"type": "json_object"}
 
@@ -339,7 +372,7 @@ async def test_reader_replies_in_other_shapes_still_count():
                         {"answers": []}))
     got = await aq.answer_questions(reader, text, TWO_QUESTIONS)
     assert got[1] == {"id": "Q2", "answer": "not shown", "panels": []} and len(reader.calls) == 2
-    assert items_of(reader.prompts[1], "QUESTIONS:\n") == [{"id": "Q2", "question": "How long did it train?"}]
+    assert items_of(reader.prompts[1], "QUESTIONS:\n") == [{"id": "Q1", "question": "How long did it train?"}]
 
 
 async def test_a_failed_follow_up_keeps_the_first_round():
@@ -381,7 +414,8 @@ async def test_grade_caps_answers_whose_cited_panels_lack_the_number():
     assert by["Q5"]["score"] == 1
     assert by["Q6"]["score"] == 0.5 and "41.8" in by["Q6"]["why"]
     sent = items_of(grader.prompts[0], "ITEMS:\n")
-    assert [item["id"] for item in sent] == ["Q1", "Q2", "Q3", "Q5", "Q6"]          # "not shown" needs no grader
+    assert [item["id"] for item in sent] == ["Q1", "Q2", "Q3", "Q4", "Q5"]          # "not shown" needs no grader; numbered without the gap
+    assert [item["answer"] for item in sent][3:] == [answers[4]["answer"], answers[5]["answer"]]
     assert sent[0]["gold"] == "28.4 BLEU" and "- Transformer (big): 28.4 [highlighted]" in sent[0]["cited_text"]
     assert sent[4]["panels"] == [2]                                                    # panel 99 does not exist
     assert grader.prompts[0].startswith("Grade each answer of a reading quiz strictly")
@@ -429,6 +463,8 @@ async def test_grade_without_a_transcript_only_requires_a_citation():
     grader = Fake(lambda prompt: {"grades": [{"id": "Q1", "score": 1, "why": "ok"}, {"id": "Q2", "score": 1, "why": "ok"}]})
     assert [g["score"] for g in await aq.grade(grader, questions, answers)] == [1, 0.5]
     assert "cited_text" not in grader.prompts[0] and "cited text" not in grader.prompts[0]
+    # a closed-book control has no manga to cite: the cap held every right closed-book answer at 0.5 (156 Seed runs, never 1)
+    assert [g["score"] for g in await aq.grade(grader, questions, answers, cite=False)] == [1, 1]
 
 
 async def test_grade_snaps_scores_and_asks_again_for_skipped_items():
@@ -440,7 +476,25 @@ async def test_grade_snaps_scores_and_asks_again_for_skipped_items():
     assert grades == [{"id": "Q1", "score": 1.0, "why": ""},
                       {"id": "Q2", "score": 0.5, "why": "baseline missing"},
                       {"id": "Q3", "score": 0.0, "why": "not graded"}]
-    assert [item["id"] for item in items_of(grader.prompts[1], "ITEMS:\n")] == ["Q3"]
+    assert [(item["id"], item["question"]) for item in items_of(grader.prompts[1], "ITEMS:\n")] == [("Q1", "Question 3?")]
+
+
+async def test_grades_after_a_not_shown_answer_land_on_their_own_questions():
+    # Gated Attention round 13: G7 was "not shown", so the grader saw G6 then G8; it graded G8 as "G7", G9 as "G8" and G10
+    # as "G9", and the right answer "non-linearity" lost its point. A grader numbering its reply by position is now right.
+    questions = [{"id": f"G{i}", "claim_ids": [0], "question": f"Question {i}?", "answer": f"gold {i}"} for i in (1, 2, 3, 4)]
+    answers = [{"id": "G1", "answer": "gold 1", "panels": [1]}, {"id": "G2", "answer": "not shown", "panels": []},
+               {"id": "G3", "answer": "gold 3", "panels": [1]}, {"id": "G4", "answer": "wrong", "panels": [1]}]
+
+    def by_position(prompt):   # numbers its grades 1, 2, 3 after the prefix it was shown, as Seed did
+        items = items_of(prompt, "ITEMS:\n")
+        prefix = items[0]["id"].rstrip("0123456789")
+        return {"grades": [{"id": f"{prefix}{i}", "score": 0 if item["answer"] == "wrong" else 1, "why": item["question"]}
+                           for i, item in enumerate(items, start=1)]}
+
+    grades = await aq.grade(Fake(by_position), questions, answers, "Panel 1:\nNarration: gold 1, gold 3")
+    assert [(g["id"], g["score"]) for g in grades] == [("G1", 1.0), ("G2", 0.0), ("G3", 1.0), ("G4", 0.0)]
+    assert grades[2]["why"] == "Question 3?"
 
 
 # ----------------------------------------------------------------------------- the gate
@@ -480,7 +534,7 @@ def text_route(prompt: str) -> dict:
 
 async def test_run_quiz_scores_the_visible_manga_and_lists_failed_claims():
     text, reader = Fake(text_route), Fake(reader_reply)
-    result = await aq.run_quiz(text, reader, make_sb(), CLAIMS, "Abstract: we propose the Transformer.")
+    result = await aq.run_quiz(text, reader, make_sb(), CLAIMS, "We propose Transformers.")   # under four words: no sentence to cover
     assert result["score"] == round((1 + 1 + 1 + 0.5 + 0 + 1) / 6, 3)
     assert result["failed_claim_ids"] == [2]
     assert result["untested_claim_ids"] == []

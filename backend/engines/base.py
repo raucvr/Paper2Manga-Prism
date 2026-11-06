@@ -91,6 +91,7 @@ class GenerationConfig:
     model: Optional[str] = None                # per-call model override
     reasoning_effort: Optional[str] = None     # with thinking: low | medium | high (None = engine default)
     prompt_cache_key: Optional[str] = None     # routes the calls of one job to the provider's cache of their shared prefix
+    cache_prefix: bool = False                 # the first message is a long prefix many calls share (the paper): cache it explicitly
 
 
 @dataclass

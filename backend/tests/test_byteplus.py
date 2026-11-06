@@ -314,3 +314,280 @@ async def test_an_ssl_error_mid_reply_is_retried(engine, monkeypatch):
     assert await engine._post("/chat/completions", {"x": 1}) == {"ok": True}
     assert len(calls) == 2 and len(sleeps) == 1
     await engine.close()
+
+
+# ------------------------------------------------------------------ explicit prefix cache (Responses API)
+
+PAPER_HEAD = "You work on one research paper. PAPER TEXT:\n" + "The Transformer uses attention only. " * 200
+
+
+def cached_config(thinking=False, **kw):
+    config = GenerationConfig(temperature=0.3, max_tokens=12000, **kw)
+    config.thinking = thinking
+    config.cache_prefix = True
+    return config
+
+
+def paper_messages(task="Fix panel 3."):
+    return [Message.system(PAPER_HEAD), Message.system("You write manga."), Message.user(task)]
+
+
+@pytest.fixture
+def responses_api(engine, monkeypatch):
+    """Fakes _post and _post_stream: the cache creations, the cached calls and the chat calls each engine call makes."""
+    log = {"create": [], "call": [], "chat": []}
+
+    async def fake(path, payload):
+        if path == "/chat/completions":
+            log["chat"].append(payload)
+            return {"model": payload["model"], "choices": [{"message": {"content": "chat"}, "finish_reason": "stop"}], "usage": {}}
+        assert path == "/responses"
+        if payload.get("caching"):
+            log["create"].append(payload)
+            return {"id": f"resp_prefix_{len(log['create'])}", "status": "completed", "output": [],
+                    "usage": {"input_tokens": 5000, "output_tokens": 0, "input_tokens_details": {"cached_tokens": 0}}}
+        log["call"].append(payload)
+        return {"id": "resp_x", "model": payload["model"], "status": "completed",
+                "output": [{"type": "reasoning", "summary": []},
+                           {"type": "message", "content": [{"type": "output_text", "text": '{"panels": []}'}]}],
+                "usage": {"input_tokens": 5040, "output_tokens": 30, "total_tokens": 5070,
+                          "input_tokens_details": {"cached_tokens": 5000}, "output_tokens_details": {"reasoning_tokens": 0}}}
+
+    monkeypatch.setattr(engine, "_post", fake)
+    monkeypatch.setattr(engine, "_post_stream", fake)
+    return log
+
+
+async def test_a_paper_first_seed_call_reads_the_paper_from_an_explicit_cache(engine, responses_api):
+    # Seed's implicit cache keeps a prefix 30-60 s: the paper-first calls of a job, minutes apart, missed it
+    first = await engine.generate_text(paper_messages(), cached_config(response_format={"type": "json_object"}))
+    await engine.generate_text(paper_messages("Fix panel 5."), cached_config())
+    assert (first.content, first.finish_reason, first.usage["cached_tokens"], first.usage["prompt_tokens"]) == ('{"panels": []}', "stop", 5000, 5040)
+    [create] = responses_api["create"]                                   # one cache for both calls
+    assert create["input"] == [{"role": "system", "content": PAPER_HEAD}] and create["caching"] == {"type": "enabled", "prefix": True}
+    assert create["thinking"] == {"type": "disabled"} and create["expire_at"] > 0
+    call = responses_api["call"][0]
+    assert call["previous_response_id"] == "resp_prefix_1" and call["store"] is False and call["max_output_tokens"] == 12000
+    assert call["input"] == [{"role": "system", "content": "You write manga."}, {"role": "user", "content": "Fix panel 3."}]
+    assert call["text"] == {"format": {"type": "json_object"}} and call["temperature"] == 0.3
+    assert responses_api["chat"] == []
+    assert engine.tokens["seed-2-0-pro-260328"] == {"prompt_tokens": 5000 + 2 * 5040, "completion_tokens": 60, "cached_tokens": 10000}
+
+
+async def test_a_thinking_call_gets_its_own_cache_and_room_to_reason(engine, responses_api):
+    # a cached head serves only calls with its thinking setting; max_output_tokens counts the reasoning, max_tokens did not
+    await engine.generate_text(paper_messages(), cached_config())
+    await engine.generate_text(paper_messages(), cached_config(thinking=True))
+    assert [c["thinking"]["type"] for c in responses_api["create"]] == ["disabled", "enabled"]
+    assert responses_api["call"][1]["previous_response_id"] == "resp_prefix_2"
+    assert responses_api["call"][1]["max_output_tokens"] == 12000 + byteplus.THINKING_HEADROOM
+
+
+@pytest.mark.parametrize("change", ["deepseek", "no_flag", "json_schema", "image", "short", "single"])
+async def test_calls_the_explicit_cache_cannot_serve_go_to_the_chat_api(engine, responses_api, change):
+    messages, config = paper_messages(), cached_config()
+    if change == "deepseek":
+        config.model = "deepseek-v4-pro-ga-260813"                        # its implicit cache already hits 93%
+    elif change == "no_flag":
+        config.cache_prefix = False
+    elif change == "json_schema":
+        config.response_format = {"type": "json_schema", "json_schema": {"name": "out", "schema": {"type": "object"}}}
+    elif change == "image":
+        messages[2] = Message.user("Judge this.", images=[ImageContent.from_base64(TINY_PNG_B64, "image/png")])
+    elif change == "short":
+        messages[0] = Message.system("A short system prompt.")
+    else:
+        messages = messages[:1]
+    await engine.generate_text(messages, config)
+    assert len(responses_api["chat"]) == 1 and responses_api["create"] == [] and responses_api["call"] == []
+
+
+async def test_an_expired_cache_is_made_again_once(engine, responses_api, monkeypatch):
+    real = engine._post
+    gone = []
+
+    async def post(path, payload):
+        if path == "/responses" and payload.get("previous_response_id") == "resp_prefix_1":
+            gone.append(1)
+            raise BytePlusAPIError(400, json.dumps({"error": {"code": "InvalidParameter.PreviousResponseNotFound", "message": "not found"}}))
+        return await real(path, payload)
+
+    monkeypatch.setattr(engine, "_post", post)
+    monkeypatch.setattr(engine, "_post_stream", post)   # a 12,000-token reply is streamed
+    response = await engine.generate_text(paper_messages(), cached_config())
+    assert response.content == '{"panels": []}' and len(gone) == 1 and len(responses_api["create"]) == 2
+    assert responses_api["call"][0]["previous_response_id"] == "resp_prefix_2"
+
+
+async def test_a_refused_cached_call_falls_back_to_the_chat_api_for_good(engine, responses_api, monkeypatch):
+    real = engine._post
+
+    async def post(path, payload):
+        if path == "/responses" and payload.get("previous_response_id"):
+            raise BytePlusAPIError(400, json.dumps({"error": {"code": "InvalidParameter", "message": "top_p is not supported"}}))
+        return await real(path, payload)
+
+    monkeypatch.setattr(engine, "_post", post)
+    monkeypatch.setattr(engine, "_post_stream", post)
+    assert (await engine.generate_text(paper_messages(), cached_config())).content == "chat"
+    await engine.generate_text(paper_messages(), cached_config())
+    assert len(responses_api["chat"]) == 2 and len(responses_api["create"]) == 1   # the second call skips the cache
+
+
+async def test_account_errors_and_filter_refusals_on_the_cached_path_are_not_swallowed(engine, responses_api, monkeypatch):
+    async def overdue(path, payload):
+        raise byteplus.AccountError(403, json.dumps({"error": {"code": "AccountOverdueError", "message": "overdue"}}))
+
+    monkeypatch.setattr(engine, "_post", overdue)
+    monkeypatch.setattr(engine, "_post_stream", overdue)
+    with pytest.raises(byteplus.AccountError):
+        await engine.generate_text(paper_messages(), cached_config())
+
+    async def filtered(path, payload):
+        if payload.get("caching"):
+            return {"id": "resp_prefix", "usage": {}}
+        return {"status": "incomplete", "incomplete_details": {"reason": "content_filter"}, "output": [], "usage": {}}
+
+    monkeypatch.setattr(engine, "_post", filtered)
+    monkeypatch.setattr(engine, "_post_stream", filtered)
+    with pytest.raises(byteplus.ContentFilteredError):
+        await engine.generate_text(paper_messages(), cached_config())
+    assert responses_api["chat"] == []
+
+
+async def test_a_streamed_cached_reply_is_assembled_and_close_deletes_the_caches(engine):
+    sse = "\n".join([
+        "event: response.created", 'data: {"type": "response.created", "response": {"id": "resp_1", "status": "in_progress"}}',
+        'data: {"type": "response.reasoning_summary_text.delta", "delta": "hmm"}',
+        'data: {"type": "response.output_text.delta", "delta": "{\\"ok\\""}',
+        'data: {"type": "response.output_text.delta", "delta": ": true}"}',
+        'data: {"type": "response.completed", "response": {"id": "resp_1", "model": "seed-2-0-pro-260328", "status": "completed", '
+        '"output": [{"type": "message", "content": [{"type": "output_text", "text": "{\\"ok\\": true}"}]}], '
+        '"usage": {"input_tokens": 900, "output_tokens": 20, "input_tokens_details": {"cached_tokens": 880}, '
+        '"output_tokens_details": {"reasoning_tokens": 12}}}}',
+        "data: [DONE]", ""])
+    requests = []
+
+    def handler(request):
+        requests.append((request.method, request.url.path, json.loads(request.content) if request.content else None))
+        if request.method == "DELETE":
+            return httpx.Response(200, json={})
+        if requests[-1][2].get("caching"):
+            return httpx.Response(200, json={"id": "resp_prefix_9", "usage": {"input_tokens": 880}})
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
+
+    engine._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    response = await engine.generate_text(paper_messages(), cached_config(thinking=True))
+    assert (response.content, response.finish_reason, response.usage["cached_tokens"], response.usage["reasoning_tokens"]) == \
+        ('{"ok": true}', "stop", 880, 12)
+    assert requests[1][2]["stream"] is True and "stream_options" not in requests[1][2]
+    await engine.close()
+    assert requests[-1][:2] == ("DELETE", "/api/v3/responses/resp_prefix_9")
+
+
+async def test_a_rate_limit_on_a_cached_call_is_raised_and_keeps_the_cache_for_later_calls(engine, responses_api, monkeypatch):
+    # a 429 after every retry fails the chat API alike; it must not switch the model's cache off for the rest of the job
+    real, limited = engine._post, []
+
+    async def post(path, payload):
+        if path == "/responses" and payload.get("previous_response_id") and not limited:
+            limited.append(1)
+            raise BytePlusAPIError(429, json.dumps({"error": {"code": "ModelAccountTpmRateLimitExceeded", "message": "slow down"}}))
+        return await real(path, payload)
+
+    monkeypatch.setattr(engine, "_post", post)
+    monkeypatch.setattr(engine, "_post_stream", post)
+    with pytest.raises(BytePlusAPIError):
+        await engine.generate_text(paper_messages(), cached_config())
+    await engine.generate_text(paper_messages(), cached_config())
+    assert engine._prefix_off == set() and len(responses_api["call"]) == 1 and responses_api["chat"] == []
+
+
+async def test_a_cache_that_cannot_be_created_sends_calls_to_the_chat_api_for_a_while(engine, responses_api, monkeypatch):
+    real, creations = engine._post, []
+
+    async def post(path, payload):
+        if payload.get("caching"):
+            creations.append(1)
+            raise RuntimeError("ModelArk /responses unreachable after 7 attempts")
+        return await real(path, payload)
+
+    monkeypatch.setattr(engine, "_post", post)
+    monkeypatch.setattr(engine, "_post_stream", post)
+    for _ in range(3):
+        assert (await engine.generate_text(paper_messages(), cached_config())).content == "chat"
+    assert len(creations) == 1 and len(responses_api["chat"]) == 3 and engine._prefix_off == set()
+
+
+async def test_a_late_not_found_never_drops_a_cache_another_call_just_made(engine, responses_api, monkeypatch):
+    real = engine._post
+    engine._prefixes[("seed-2-0-pro-260328", "disabled", __import__("hashlib").sha256(PAPER_HEAD.encode()).hexdigest())] = \
+        ("resp_stale", __import__("time").time() + 3000)
+
+    async def post(path, payload):
+        if payload.get("previous_response_id") == "resp_stale":
+            if payload["input"][-1]["content"] == "slow":
+                await __import__("asyncio").sleep(0.05)   # its 400 comes back after the other call made a new cache
+            raise BytePlusAPIError(400, json.dumps({"error": {"code": "InvalidParameter.PreviousResponseNotFound", "message": "gone"}}))
+        return await real(path, payload)
+
+    monkeypatch.setattr(engine, "_post", post)
+    monkeypatch.setattr(engine, "_post_stream", post)
+    import asyncio as _asyncio
+    await _asyncio.gather(engine.generate_text(paper_messages("fast"), cached_config()),
+                          engine.generate_text(paper_messages("slow"), cached_config()))
+    assert len(responses_api["create"]) == 1 and {c["previous_response_id"] for c in responses_api["call"]} == {"resp_prefix_1"}
+
+
+async def test_a_model_refused_on_the_responses_endpoint_falls_back_to_chat(engine, responses_api, monkeypatch):
+    real = engine._post
+
+    async def post(path, payload):
+        if path == "/responses" and payload.get("previous_response_id"):
+            raise byteplus.AccountError(403, json.dumps({"error": {"code": "AccessDenied", "message": "not on this endpoint"}}), payload["model"])
+        return await real(path, payload)
+
+    monkeypatch.setattr(engine, "_post", post)
+    monkeypatch.setattr(engine, "_post_stream", post)
+    assert (await engine.generate_text(paper_messages(), cached_config())).content == "chat"
+    assert engine._prefix_off == {"seed-2-0-pro-260328"}
+
+
+@pytest.mark.parametrize("path", ["/responses", "/chat/completions"])
+async def test_a_rate_limit_inside_a_stream_is_asked_again(engine, monkeypatch, path):
+    # RequestBurstTooFast cut a story call off at event 2869 and failed the whole job (2026-10-27)
+    burst = ('data: {"type": "error", "code": "RequestBurstTooFast", "message": "slow down"}' if path == "/responses"
+             else 'data: {"error": {"code": "RequestBurstTooFast", "message": "slow down"}}')
+    good = ('data: {"type": "response.completed", "response": {"status": "completed", "output": [{"type": "message", '
+            '"content": [{"type": "output_text", "text": "ok"}]}], "usage": {}}}' if path == "/responses"
+            else 'data: {"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}')
+    sent, sleeps = [], []
+
+    def handler(request):
+        sent.append(1)
+        lines = ['data: {"type": "response.created", "response": {}}', burst] if len(sent) == 1 else [good]
+        return httpx.Response(200, text="\n".join(lines + ["data: [DONE]", ""]), headers={"content-type": "text/event-stream"})
+
+    async def no_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(byteplus, "asyncio", SimpleNamespace(sleep=no_sleep))
+    engine._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    data = await engine._post_stream(path, {"model": "seed-2-0-pro-260328"})
+    text = byteplus._response_text(data) if path == "/responses" else data["choices"][0]["message"]["content"]
+    assert text == "ok" and len(sent) == 2 and len(sleeps) == 1
+    await engine.close()
+
+
+async def test_an_error_event_that_retrying_cannot_fix_stops_the_call(engine, monkeypatch):
+    sent = []
+
+    def handler(request):
+        sent.append(1)
+        return httpx.Response(200, text='data: {"type": "error", "code": "OutputTextSensitiveContentDetected"}\n', headers={"content-type": "text/event-stream"})
+
+    engine._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(BytePlusAPIError, match="Sensitive"):
+        await engine._post_stream("/responses", {"model": "seed-2-0-pro-260328"})
+    assert len(sent) == 1
+    await engine.close()

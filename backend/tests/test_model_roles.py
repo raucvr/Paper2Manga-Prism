@@ -96,6 +96,19 @@ async def test_build_v3_sends_the_paper_first_with_one_cache_key():
     assert len(paper_calls) >= 4                                   # brief, brief check, story, fact-check
     assert len({m[0].content for m, _ in paper_calls}) == 1        # byte-identical prefix
     assert {c.prompt_cache_key for _, c in paper_calls} == {"prism-job-1"}
+    # the engine may cache the paper explicitly (Seed holds an implicit prefix 30-60 s); no other call asks for that
+    assert all(c.cache_prefix for _, c in paper_calls)
+    assert not any(c.cache_prefix for m, c in engine.calls if not m[0].content.startswith("You work on one research paper"))
+
+
+async def test_the_warm_up_thinks_like_the_checks_it_serves():
+    # a cached head serves only calls with the same thinking setting: a warm-up without thinking left the three
+    # brief-check parts of a real job uncached
+    engine = FakeEngine([{"ok": True}])
+    await StoryboarderV2(engine, cache_key="prism-job-1")._warm(engine, "The paper.\n" * 100)
+    [(messages, config)] = engine.calls
+    assert config.thinking is True and config.cache_prefix and config.max_tokens == 1
+    assert messages[0].content.startswith("You work on one research paper")
 
 
 

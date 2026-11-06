@@ -47,6 +47,20 @@ def test_replies_are_bound_before_anything_reads_them():
     assert panel.board["source"] == "Table 2" and panel.dialogue[0].text == "28.4 BLEU against 26.36!"
 
 
+def test_a_citation_that_ends_a_sentence_is_bound_or_scrubbed():
+    # LongZero round 12 drew "Base model scores @T2.r2.c6." in a bubble: the full stop hid the citation from the binder
+    # and from the final scrub
+    panel = board_panel(chart({"label": "Transformer big", "value": "@T2.r5.c1", "highlight": True},
+                              {"label": "ConvS2S Ensemble", "value": "@T2.r3.c1", "baseline": True}),
+                        line="The big model scores @T2.r5.c1. Look at @T2.r9.c1.")
+    _normalize_v3_panels([panel], make_cast(), CLAIMS_WITH_RESULT, LEDGER)
+    assert panel.dialogue[0].text == "The big model scores 28.4. Look at @T2.r9.c1."
+    problems = lint_v3(v3_storyboard([panel], CLAIMS_WITH_RESULT), PAPER)[1]
+    assert any("@T2.r9.c1" in x and x.startswith("evidence: bubble 0") for x in problems)
+    scrub_unsupported(v3_storyboard([panel], CLAIMS_WITH_RESULT), PAPER)
+    assert "@" not in panel.dialogue[0].text
+
+
 def test_lint_reports_citations_that_name_nothing():
     panel = board_panel(chart({"label": "Transformer big", "value": "@T2.r5.c1", "highlight": True},
                               {"label": "ConvS2S Ensemble", "value": "@T2.r3.c1", "baseline": True},
@@ -109,6 +123,8 @@ def test_fact_check_sees_where_a_cited_value_comes_from():
     _normalize_v3_panels([panel], make_cast(), CLAIMS_WITH_RESULT, LEDGER)
     whole = _board_check_items(panel, whole=True, paper_text=PAPER)[0]["text"]
     assert 'Table 2, column \\"BLEU › EN-DE\\", row \\"Transformer (big)\\"' in whole and '"cell"' not in whole
+    # ...and what that table reports: 1000 Layers drew Table 4's training hours as "Extreme Depth Performance"
+    assert '(the table: \\"BLEU scores on the newstest2014 tests.\\")' in whole
 
 
 async def test_build_v3_draws_cited_cells_with_their_exact_numbers():
@@ -116,6 +132,7 @@ async def test_build_v3_draws_cited_cells_with_their_exact_numbers():
                   {"label": "ConvS2S Ensemble", "value": "@T2.r3.c1", "baseline": True},
                   {"label": "MoE", "value": "@T2.r2.c1"},
                   {"label": "ByteNet", "value": "@T2.r1.c1"})
+    cited["subtitle"] = "ConvS2S: an earlier convolutional translation model"   # the system the gap is measured against
 
     def story(payload):
         payload["panels"][5]["board"] = cited
@@ -143,3 +160,25 @@ def test_lint_flags_a_bar_from_outside_the_cited_column():
     _normalize_v3_panels([panel], make_cast(), CLAIMS_WITH_RESULT, LEDGER)
     problems = lint_v3(v3_storyboard([panel], CLAIMS_WITH_RESULT), PAPER).get(1, [])
     assert not any("are not in the column" in x for x in problems)
+
+
+TABLE_BINS = {"label": "Table 4", "page": 9, "caption": "Table 4: Effect of the AI expansion by call position.",
+              "columns": [["(1)", "1–3"], ["(2)", "4–6"], ["(3)", "7–9"]],
+              "rows": [{"label": "After AI Expansion", "group": 0, "cells": ["0.234*** (0.033)", "0.157*** (0.033)", "0.117*** (0.043)"]},
+                       {"label": "Observations", "group": 1, "cells": ["23,085", "21,383", "20,504"]}]}
+
+
+def test_a_trend_over_the_bins_of_one_table_row_is_one_chart():
+    # the board check asks for a trend across call positions as a bar chart; one row of bins is one series, not a field
+    paper = L.with_ledger(V3_PAPER_TEXT, L.Ledger.from_tables([TABLE2, TABLE_BINS]))
+    ledger = L.ledger_of(paper)
+    trend = {"kind": "bar", "title": "Hot-lead chance by call position", "subtitle": "change in probability", "unit": "probability",
+             "bars": [{"label": "Calls 1-3", "value": "@T4.r1.c1", "highlight": True}, {"label": "Calls 4-6", "value": "@T4.r1.c2"},
+                      {"label": "Calls 7-9", "value": "@T4.r1.c3"}]}
+    panel = board_panel(trend, "Biggest at the first calls.")
+    _normalize_v3_panels([panel], make_cast(), CLAIMS_WITH_RESULT, ledger)
+    assert not any("different table columns" in x for x in lint_v3(v3_storyboard([panel], CLAIMS_WITH_RESULT), paper).get(1, []))
+    mixed = board_panel(chart({"label": "Transformer big EN-DE", "value": "@T2.r5.c1", "highlight": True},   # two metrics: still one column
+                              {"label": "Transformer big EN-FR", "value": "@T2.r5.c2"}))
+    _normalize_v3_panels([mixed], make_cast(), CLAIMS_WITH_RESULT, ledger)
+    assert any("different table columns" in x for x in lint_v3(v3_storyboard([mixed], CLAIMS_WITH_RESULT), paper)[1])

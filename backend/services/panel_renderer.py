@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Sequence
 
 from engines.base import BaseEngine, ImageContent, ImageGenerationConfig, ImageResponse
-from services.storyboarder_v2 import SCENE_CHART_RE, Cast, PanelV2
+from services.storyboarder_v2 import CHAT_BOX_RE, PICTURE_BEATS, SCENE_CHART_RE, Cast, PanelV2
 
 ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
 
@@ -63,7 +63,7 @@ def _looks_block(cast: Cast, present: list[str], ref_names: list[str]) -> str:
 
 def _scope_line(cast: Cast, present: list[str], noun: str = "panel") -> str:
     others = [m.name for m in cast.members if m.name not in present]
-    line = f"Characters in this {noun}: {', '.join(present)} only."
+    line = f"Characters in this {noun}: {', '.join(present)} only." if present else f"No characters in this {noun}."
     if others:
         line += f" {', '.join(others)} do NOT appear."
     return line + (" No other people, children, animals or creatures appear anywhere in the picture; apart from the listed characters, "
@@ -141,7 +141,8 @@ def build_strip_prompt(panels: list[PanelV2], cast: Cast, language: str, ref_nam
 
 # ----------------------------------------------------------------------------- v3: text-free art (the text is typeset later)
 
-WORDLESS = ("WORDLESS IMAGE: no letters, words, numbers, digits, symbols, speech bubbles, captions or signatures anywhere; "
+WORDLESS = ("WORDLESS IMAGE: no letters, words, numbers, digits, written symbols, speech bubbles, chat windows, text boxes, captions or "
+            "signatures anywhere (arrows and simple shapes that the scene asks for are fine); "
             "screens, books, papers, clipboards, cards, boards, signs and clock faces are blank or show only simple shapes.")
 ART_SHEET_CAPTIONS = " Never copy the captions on the reference sheets."
 ART_TEXTY_HINT = "Draw anything in this scene that would carry writing (a sentence, word, number or formula) as blank cards, blocks or bars."
@@ -151,16 +152,23 @@ BOARD_COMPOSITION = ("Composition: the top 22% of the panel is plain empty wall 
                      "whiteboard spans almost the full width of the panel and about 48% of its height, seen straight on, evenly lit, with a "
                      "thin dark frame. Nothing stands in front of it or overlaps it, and nothing is written or drawn on it.")
 ART_MAX_WORDS = 450
+# a teaching scene names what its picture alone must make clear: the objects that carry the idea are drawn big and uncovered
+# (the audit of 2026-10-28: key props were tiny or hidden, e.g. eight answer cards in a strip at the bottom edge)
+SHOWS_LINE = ("The picture itself must make this clear, without any words: {shows}. Draw the objects that carry it LARGE and in "
+              "front, in the lower two thirds of the panel, fully visible and not covered by anyone.")
+SHOWS_MAX_WORDS = 60
 # a scene that mentions writing gets the blank-cards hint ("nezu scribbles on his clipboard" came back with glyphs on it)
 ART_TEXTY_RE = re.compile(TEXTY_RE.pattern + r"|\b(?:writes?|scribbl\w*|jot(?:s|ted|ting)?)\b", re.I)
 # quoted words invite the image model to letter them: dialogue never enters the art prompt, quoted bits of a scene are dropped
 # (a straight single quote only opens after a non-word character, so "kumo's" and "papis'" stay)
+CAPS_RUN_RE = re.compile(r"\b[A-Z]{3,}(?:[\s:,!]+[A-Z]{2,})+\b[:!]?")   # words in capitals: a sign's text, never a name
 QUOTED_RE = re.compile(r"\"[^\"\n]*\"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』|«[^»\n]*»|(?<![\w'])'[^'\n]+'(?!\w)")
 # the exhibit is drawn by code, so the picture needs a blank board, never a chart the image model would make up
 CHART_RE = re.compile(r"\b(?:(?:bar|line|pie|flow|results?|comparison|data|scores?|summary|recap)\s+)?"
                       r"(?:charts?|graphs?|plots?|diagrams?|flowcharts?|infographics?|histograms?|pipelines?|slides?)\b", re.I)
 QUALIFIED_RE = re.compile(r"\b(?:comparison|results?|data|scores?|summary|recap|numbers?|values?)\s+(?:tables?|lists?|bars?)\b", re.I)
-KIND_WORDS = {"bar": r"bars?", "table": r"tables?", "list": r"lists?|checklists?", "flow": r"arrows?", "links": r"arrows?"}
+KIND_WORDS = {"bar": r"bars?", "table": r"tables?", "list": r"lists?|checklists?", "flow": r"arrows?", "links": r"arrows?",
+              "diagram": r"arrows?|boxes|diagrams?"}   # what the program draws on the board, never the illustrator
 # "the kitchen table" is furniture even when the exhibit is a table
 FURNITURE_CUES = frozenset("sit sits sat sitting seated around on under beneath kitchen dining coffee wooden picnic work side "
                            "round lab breakfast folding cluttered".split())
@@ -174,6 +182,7 @@ _SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻"
 NUMBER_RE = re.compile(rf"(?<![\w.])(?<![A-Za-z][\-−])[+\-−±~≈]?\d+(?:[.,:/]\d+)*(?:\s*[·×x*]\s*10(?:\^?[+\-−]?\d+|[{_SUPERSCRIPTS}]+))?"
                        rf"(?:[eE][+\-−]?\d+)?(?:\s*%|[{_SUPERSCRIPTS}]+|[x×])?(?!\w)")
 OFF_PANEL = "something just out of view"
+BLANK_CARDS = "small glowing orbs"   # not cards: the art check counts an empty box or card floating in the air as a text box
 COUNT_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve")
 
 
@@ -182,7 +191,8 @@ def _tidy(text: str) -> str:
 
 
 def _unquoted(text: Optional[str]) -> str:
-    return _tidy(re.sub(r"[\"“”「」『』«»]", "", QUOTED_RE.sub(" ", text or "")))   # stray marks of an unbalanced quote go too
+    text = CAPS_RUN_RE.sub(" ", QUOTED_RE.sub(" ", text or ""))   # "displays DELIVERY FAILED" would be lettered
+    return _tidy(re.sub(r"[\"“”「」『』«»]", "", text))   # stray marks of an unbalanced quote go too
 
 
 def _no_numbers(text: str) -> str:
@@ -199,6 +209,28 @@ def _no_chart(text: str) -> str:
     no board to put it on: the characters look at something out of view instead."""
     return re.sub(rf"\b(?:(?:the|a|an|this|that|these|those|their|its)\s+)?(?:(?:rising|growing|shrinking|falling|tall|short|big|small)\s+)?"
                   rf"(?:{SCENE_CHART_RE.pattern})", OFF_PANEL, text, flags=re.I)
+
+
+def _no_chat(text: str) -> str:
+    """Chat windows and text boxes come back as empty speech bubbles ("empty reply windows float above them" on
+    Hivemind's first panel), which readers take for missing text: they become glowing orbs."""
+    return re.sub(rf"\b(?:(?:the|a|an|this|that|these|those|their|its|some|several|many)\s+)?(?:(?:empty|blank|floating|glowing|open|"
+                  rf"small|big|many|several|identical)\s+)*(?:{CHAT_BOX_RE.pattern})", BLANK_CARDS, text, flags=re.I)
+
+
+# "a white slip marked with a red cross" came back as a first-aid plus: the delivery book's fake-remark slips read as medical
+# kits to the audit, while the words meant a mark of failure (the Chinese text says 红叉, an X)
+RED_CROSS_RE = re.compile(r"\bred[- ]cross(es)?\b", re.I)
+
+
+def _x_marks(text: str) -> str:
+    return RED_CROSS_RE.sub(lambda m: "red X mark" + ("s" if m.group(1) else ""), text)
+
+
+def _symbol_words(symbol: str) -> str:
+    """A book symbol as the image model is told it (its reference sheet and the line that points at the sheet): cleaned
+    like the panel's own words, since the sheet is copied into every panel that draws the symbol."""
+    return " ".join(_no_numbers(_x_marks(_unquoted(symbol))).split())
 
 
 def _clip_words(text: str, limit: Optional[int]) -> str:
@@ -237,18 +269,36 @@ def _placement(names: list[str]) -> str:
     return f"from left to right {', '.join(names[:-1])} and {names[-1]}" if names else ""
 
 
-def build_art_prompt(panel: PanelV2, cast: Cast, ref_names: list[str], feedback: Optional[str] = None, anchor: bool = False) -> str:
+def art_shows(panel: PanelV2) -> str:
+    """A teaching scene's idea exactly as SHOWS_LINE gives it to the image model (no quotes, charts, chat boxes or digits,
+    at most SHOWS_MAX_WORDS words); the idea check judges this same text, never words the image model was told to leave out.
+    A story-only scene (an introduction, a challenge, the bet) has none: only the teaching beats and the hook are drawn to it."""
+    shows = _x_marks(_no_chat(_unquoted(panel.shows)))
+    if panel.beat not in PICTURE_BEATS + ("hook",) or SCENE_CHART_RE.search(shows):
+        return ""   # a chart cannot be the drawn idea: "something just out of view towers over..." would be asked for, and judged
+    return _clip_words(_no_numbers(shows).strip().rstrip("."), SHOWS_MAX_WORDS)
+
+
+def build_art_prompt(panel: PanelV2, cast: Cast, ref_names: list[str], feedback: Optional[str] = None, anchor: bool = False,
+                     shape: str = "portrait", props: Sequence[str] = ()) -> str:
     """v3: the picture of one panel with NO text in it — dialogue, narration, labels and the board's exhibit are typeset
     by code afterwards, so none of them is ever sent. The top stays calm for that text, the first speaker stands on the
-    left so the bubbles read in order, and a board panel gets a large blank whiteboard. At most ART_MAX_WORDS words."""
-    style = cast.style + _reference_block(cast, ref_names, force_ordinals=anchor) + _looks_block(cast, panel.characters, ref_names)
+    left so the bubbles read in order, and a board panel gets a large blank whiteboard. At most ART_MAX_WORDS words, plus
+    one line per symbol sheet. ``shape``: "landscape" for one of two frames stacked in a panel (two_frames_prompt).
+    ``props``: the book symbols whose reference pictures follow the character sheets (and the anchor), in that order."""
+    style = cast.style + _reference_block(cast, ref_names, force_ordinals=anchor or bool(props)) + _looks_block(cast, panel.characters, ref_names)
     if anchor:
         style += (f" The {_ordinal(len(ref_names))} reference image is the previous panel of this same manga: match its palette, "
                   "line weight and lighting, but do not copy its composition or poses.")
-    head = f"{style}\nA single manga panel, portrait, with a thin black border and a small white margin. {_scope_line(cast, panel.characters)}"
+    first = len(ref_names) + (1 if anchor else 0)
+    # outside the word budget: a symbol's sheet must never cost the panel its own action or a retry its feedback
+    sheet_lines = "".join(f" The {_ordinal(first + i)} reference image shows the {_symbol_words(symbol)}: draw it exactly as that "
+                          "image shows it (same shape, colors and proportions)." for i, symbol in enumerate(props))
+    style += sheet_lines
+    head = f"{style}\nA single manga panel, {shape}, with a thin black border and a small white margin. {_scope_line(cast, panel.characters)}"
     # as lettering: a "board" panel without an exhibit is lettered as a scene, so it is drawn as one
     board = panel.kind == "board" and isinstance(panel.board, dict) and bool(panel.board)
-    setting, action = _unquoted(panel.scene), _unquoted(panel.visual)
+    setting, action = _x_marks(_no_chat(_unquoted(panel.scene))), _x_marks(_no_chat(_unquoted(panel.visual)))
     if board:
         kind = str(panel.board.get("kind") or "").lower()
         setting, action = _board_text(setting, kind), _board_text(action, kind)
@@ -263,7 +313,8 @@ def build_art_prompt(panel: PanelV2, cast: Cast, ref_names: list[str], feedback:
                                            "the chest up." if where else "")
     else:
         composition = SCENE_COMPOSITION + (f"; {where}." if where else ".")
-    texty = not board and ART_TEXTY_RE.search(f"{panel.scene} {panel.visual}")
+    texty = not board and ART_TEXTY_RE.search(f"{panel.scene} {panel.visual} {panel.shows}")
+    shows = "" if board else art_shows(panel)
     rules = WORDLESS + (ART_SHEET_CAPTIONS if ref_names else "")
     fix = _unquoted(feedback)
 
@@ -272,6 +323,8 @@ def build_art_prompt(panel: PanelV2, cast: Cast, ref_names: list[str], feedback:
         act = _tidy(f"{_clip_words(action, action_words)} {emotions}")
         if act:
             lines.append(f"Action (draw nothing on the board): {act}" if board else f"Action: {act}")
+        if shows:
+            lines.append(SHOWS_LINE.format(shows=shows))
         if texty:
             lines.append(ART_TEXTY_HINT)
         lines.append(composition)
@@ -280,14 +333,74 @@ def build_art_prompt(panel: PanelV2, cast: Cast, ref_names: list[str], feedback:
     # only an over-long prompt is clipped: the scene and the feedback give way, the rules never do
     for caps in ((None, None, None), (45, 90, 80), (30, 60, 60), (20, 40, 40), (15, 25, 25), (15, 25, 0)):
         prompt = assemble(*caps)
-        if len(prompt.split()) <= ART_MAX_WORDS:
+        if len(prompt.split()) - len(sheet_lines.split()) <= ART_MAX_WORDS:
             break
     return prompt
 
 
+# A teaching scene whose picture still misses its idea after every try is drawn as two frames stacked in its panel. Of
+# round 17's 13 such scenes, blind judges preferred the two frames 9 times and the single picture 3 times (1 tie); where
+# the single picture had come out, it won 7 to 2 (a contrast inside one picture reads at a glance), so only a missed idea
+# gets frames. Most of the misses asked one picture for several moments ("taps each stack, then pushes them together").
+TWO_FRAMES_PROMPT = """This manga panel's picture did not come out: the image model draws one frozen instant per picture, and this plan asks for more than it shows at once{why}. Draw the panel as two frames stacked in it, top then bottom, the way a manga shows a change.
+- The top frame shows the first moment (the before, the cause, or the 'without'); the bottom frame the second (the after, the effect, or the 'with'). Each frame is ONE frozen instant: a state, or an action caught midway with its result already visible. Never "first ... then ..." inside one frame, never a frame split into halves.
+- Draw the same objects the same way in both frames (same colors, sizes and places), so that the one visible difference between the frames is the panel's point.
+- Only these characters appear: {characters}; a frame may leave any of them out. Nothing to count beyond five (a share is a tiny part beside a huge whole); never words, numbers, charts, boards, screens with text, or props shaped like people or creatures; use the objects the words name, so the reader knows what each stands for.
+- "visual": what is drawn in that frame (setting, poses, objects and what happens to them). "shows": one plain sentence, the visible arrangement that carries this frame's part of the idea, with a cast member named by name, never by a role word or an abbreviation.
+
+THE PANEL (its words are lettered over both frames):
+scene: {scene}
+visual (the plan that did not come out): {visual}
+shows: {shows}
+words: {words}
+
+Output JSON only: {{"frames": [{{"visual": "...", "shows": "..."}}, {{"visual": "...", "shows": "..."}}]}}"""
+FRAME_MIN_PIXELS = 921_600   # the image model's smallest picture (1280x720)
+# One reference picture per book symbol, drawn before the panels and passed beside the character sheets wherever a
+# panel draws the symbol. Round 18's Gated Attention named its gate "small round grey dimmer switch" in every visual
+# and got knobs, pucks, keys, clamps and a sieve; with the sheets, blind judges found every symbol steadier (8 to 0, 2
+# even) and preferred 13 pictures to 4 (15 even) over two books.
+PROP_PROMPT = ("{style}\nA reference sheet of one prop for an illustrated book: {symbol}. One single {symbol}, drawn alone and "
+               "centered on a plain white background, seen from slightly above, large and fully visible, in the same "
+               "picture-book style. No people, no characters, no animals, no text, no labels, no numbers, no other objects.")
+PROP_SIZE = (1024, 1024)
+MAX_REFS = 10   # reference images the image model takes in one call
+MAX_PROPS = 4   # symbol sheets per picture (the validated probe passed at most 4)
+
+
+def two_frames_prompt(panel: PanelV2, problems: list[str]) -> str:
+    """The plan of two frames for a teaching scene whose best picture missed its idea (``problems``: that picture's)."""
+    idea = next((str(p) for p in problems if str(p).startswith(("idea not shown:", "idea unclear:"))), "")
+    words = [f"{b.speaker}: {b.text}" for b in panel.dialogue] + ([f"narration: {panel.narration}"] if panel.narration else [])
+    return TWO_FRAMES_PROMPT.format(why=f" (the check of the best attempt: {idea[:300]})" if idea else "",
+                                    characters=", ".join(panel.characters) or "none", scene=panel.scene, visual=panel.visual,
+                                    shows=panel.shows, words=" | ".join(words) or "(none)")
+
+
+def parse_two_frames(data) -> Optional[list[dict]]:
+    """[{"visual", "shows"}, {"visual", "shows"}] from a two_frames_prompt reply; None unless both frames have both (a frame
+    without "shows" could not be idea-checked)."""
+    frames = data.get("frames") if isinstance(data, dict) else None
+    if not isinstance(frames, list) or len(frames) != 2 or not all(isinstance(f, dict) for f in frames):
+        return None
+    out = [{"visual": " ".join(str(f.get("visual") or "").split()), "shows": " ".join(str(f.get("shows") or "").split())} for f in frames]
+    return out if all(f["visual"] and f["shows"] for f in out) else None
+
+
+def frame_size(panel_size: tuple[int, int]) -> tuple[int, int]:
+    """The size asked for one of two frames stacked in a panel: the panel's width by half its height (1024x768 of a
+    1024x1536 panel), scaled up to the image model's smallest picture, in multiples of 16 (1120x832)."""
+    w, h = int(panel_size[0]), int(panel_size[1]) // 2
+    k = max(1.0, (FRAME_MIN_PIXELS / max(1, w * h)) ** 0.5)
+    return -(-int(w * k) // 16) * 16, -(-int(h * k) // 16) * 16
+
+
 def select_reference_names(panels: list[PanelV2], sheets: dict[str, ImageContent], cast: Cast) -> list[str]:
-    """Sheets of the characters that appear (in cast order); all sheets when none of them has one."""
+    """Sheets of the characters that appear (in cast order); all sheets when none of them has one; none when nobody
+    appears (a frame of objects only: given the sheets, the image model drew the cast into it anyway)."""
     present = {c for p in panels for c in p.characters}
+    if not present:
+        return []
     names = [m.name for m in cast.members if m.name in present and m.name in sheets]
     if not names:
         names = [m.name for m in cast.members if m.name in sheets]
@@ -320,17 +433,28 @@ class PanelRenderer:
         return RenderResult(image=response.images[0], prompt=prompt, usage=getattr(response, "usage", {}) or {},
                             size=getattr(response, "size", None) or f"{size[0]}x{size[1]}", seconds=round(time.time() - t0, 1))
 
-    async def render_panel(self, panel: PanelV2, feedback: Optional[str] = None, anchor: Optional[ImageContent] = None) -> RenderResult:
+    async def render_panel(self, panel: PanelV2, feedback: Optional[str] = None, anchor: Optional[ImageContent] = None,
+                           size: Optional[tuple[int, int]] = None, props: Sequence[tuple[str, ImageContent]] = ()) -> RenderResult:
+        """``size``: another picture size than the panel's (frame_size for one of two stacked frames). ``props``: (symbol,
+        reference picture) of the book symbols this picture draws (v3), passed after the character sheets."""
         names = select_reference_names([panel], self.sheets, self.cast)
         refs = [self.sheets[n] for n in names]
-        use_anchor = anchor is not None and len(refs) < 10
+        use_anchor = anchor is not None and len(refs) < MAX_REFS
         if use_anchor:
             refs = refs + [anchor]
+        size = tuple(size) if size else self.panel_size
         if self.text_free:
-            prompt = build_art_prompt(panel, self.cast, names, feedback=feedback, anchor=use_anchor)
+            props = list(props)[:max(0, min(MAX_PROPS, MAX_REFS - len(refs)))]
+            refs = refs + [image for _, image in props]
+            prompt = build_art_prompt(panel, self.cast, names, feedback=feedback, anchor=use_anchor,
+                                      shape="landscape" if size[0] > size[1] else "portrait", props=[s for s, _ in props])
         else:
             prompt = build_single_prompt(panel, self.cast, self.language, names, feedback=feedback, anchor=use_anchor)
-        return await self._generate(prompt, refs, self.panel_size)
+        return await self._generate(prompt, refs, size)
+
+    async def render_prop(self, symbol: str) -> RenderResult:
+        """The reference picture of one book symbol (PROP_PROMPT), with no reference image of its own."""
+        return await self._generate(PROP_PROMPT.format(style=self.cast.style, symbol=_symbol_words(symbol)), [], PROP_SIZE)
 
     async def render_strip(self, panels: list[PanelV2], feedback: Optional[str] = None) -> RenderResult:
         if self.text_free:   # v3 letters every panel on its own art; a lettered strip prompt here would put text in the art

@@ -112,7 +112,7 @@ def board_art(w=400, h=600, clutter=False, board=BOARD) -> Image.Image:
 # ----------------------------------------------------------------------------- grounding JSON → Grounding
 
 def test_grounding_has_exactly_the_fields_lettering_reads():
-    assert [f.name for f in dataclasses.fields(Grounding)] == ["size", "heads", "board", "bubbles", "text_found", "extras", "matches"]
+    assert [f.name for f in dataclasses.fields(Grounding)] == ["size", "heads", "board", "bubbles", "text_found", "extras", "matches", "objects"]
     g = Grounding(size=(10, 20))   # the empty grounding is a valid fallback
     assert (g.heads, g.board, g.bubbles, g.text_found, g.extras, g.matches) == ({}, None, [], [], [], {})
 
@@ -318,7 +318,7 @@ def test_drawn_text_names_the_place_never_the_glyphs():
                   bubbles=[(10, 10, 100, 60)])
     problems = art_problems(g, panel(), art)
     assert problems == ["drawn text: remove every letter, digit and symbol (on the clock face, nezu's clipboard); every surface stays blank",
-                        "drawn bubbles: remove the speech bubbles; the picture has no bubbles or captions"]
+                        "drawn bubbles: remove the speech bubbles, chat windows and text boxes; the picture has no bubbles or captions"]
     assert "好我" not in " ".join(problems) and "12" not in " ".join(problems)
 
 
@@ -414,10 +414,10 @@ def test_rank_key_on_real_problems_and_after_a_json_round_trip():
     art = scene_art(calm=0.05)
     problems = art_problems(Grounding(size=art.size, heads={"papi": (40, 360, 160, 470)}, text_found=["A (on a sign)"]), panel(), art)
     key = rank_key(problems)
-    assert key[:6] == (0, -1, 0, -1, 0, -1) and key[-1] == -3
+    assert key[:8] == (0, -1, 0, -1, 0, 0, 0, -1) and key[-1] == -3
     assert rank_key(json.loads(json.dumps(problems))) == key
-    assert rank_key([]) == (0, 0, 0, 0, 0, 0, 0, 0) and rank_key(None) == rank_key([])
-    assert rank_key(["something else entirely"])[:7] == (0, 0, 0, 0, 0, 0, 0)   # unknown notes only count in the total
+    assert rank_key([]) == (0,) * 10 and rank_key(None) == rank_key([])
+    assert rank_key(["something else entirely"])[:9] == (0,) * 9   # unknown notes only count in the total
 
 
 # ----------------------------------------------------------------------------- reviewer fixes: odd reply shapes
@@ -570,3 +570,117 @@ def test_a_narrower_but_tall_blank_board_is_big_enough():
     assert problems_for(600, 1000) == []          # ~52% x 44%: narrower than 55% but tall: room for the chart
     assert problems_for(480, 1000)                # ~40% wide: too narrow whatever its height
     assert problems_for(600, 560)                 # ~52% x 15%: too short
+
+
+# ----------------------------------------------------------------------------- does the picture show the idea?
+
+SHOWS = "the small padlocked card comes first and a bold arrow leads from it to a tall stack of pages"
+
+
+async def test_the_idea_check_turns_a_verdict_into_feedback_and_object_boxes():
+    from services.art_check import check_idea
+    image = png(400, 600)
+    yes = VisionFake([{"shown": "yes", "missing": "", "objects": [[100, 500, 600, 900]]}])
+    assert await check_idea(yes, image, SHOWS, (400, 600)) == (None, [(40, 300, 240, 540)])
+    assert SHOWS in yes.calls[0][0][0].content and yes.calls[0][1].response_format == {"type": "json_object"}
+    partly = VisionFake([{"shown": "partly", "missing": "the arrow is tiny", "objects": []}])
+    problem, boxes = await check_idea(partly, image, SHOWS, (400, 600))
+    assert problem.startswith("idea unclear: the picture must show the small padlocked card") and "the arrow is tiny" in problem
+    no = VisionFake(["not json", {"shown": "no", "missing": "no card at all"}])   # a reply that is not JSON is asked again
+    problem, boxes = await check_idea(no, image, SHOWS, (400, 600))
+    assert problem.startswith("idea not shown:") and "missing: no card at all" in problem and boxes == [] and len(no.calls) == 2
+    with pytest.raises(GroundingError):
+        await check_idea(VisionFake(["?", "{}"]), image, SHOWS, (400, 600))
+
+
+def test_an_attempt_that_misses_its_idea_ranks_below_one_that_shows_it():
+    missed = ["idea not shown: the picture must show the card"]
+    unclear = ["idea unclear: the picture must show the card"]
+    busy = ["busy top: the calm area at the top is only 10% of the panel height (needs 14%); x"]
+    assert sorted([missed, busy, unclear, []], key=rank_key, reverse=True) == [[], busy, unclear, missed]
+    assert rank_key(["drawn text: remove every letter"]) < rank_key(missed)   # drawn text is still worse
+    unjudged = ["idea unclear: (not checked)"]   # how jobs ranks an attempt whose idea check failed
+    assert rank_key(missed) < rank_key(unjudged) < rank_key([])
+
+
+def test_a_teaching_arrow_is_not_drawn_text():
+    # the pictures now ask for "a bold arrow from cause to effect": the grounding must not report it as writing
+    from services.art_check import _texts
+    assert _texts([{"text": "bold arrow", "where": "between the card and the stack"}, {"text": "→ →", "where": "the desk"},
+                   "a big red arrow"]) == []
+    assert _texts([{"text": "EXIT arrow", "where": "the wall"}, {"text": "arrow 3", "where": "the floor"}]) == [
+        "EXIT arrow (on the wall)", "arrow 3 (on the floor)"]
+    # a symbol's simple shape is an object too ("a slip marked with a red cross", "a green check mark sticker")
+    assert _texts([{"text": "red cross", "where": "the paper slip"}, {"text": "green check mark", "where": "each sticker"},
+                   {"text": "✓", "where": "the sticker"}, "stars and dots"]) == []
+    assert _texts([{"text": "OK", "where": "the sticker"}]) == ["OK (on the sticker)"]
+
+
+async def test_a_diagnosis_that_asks_for_writing_is_never_repeated_to_the_image_model():
+    from services.art_check import check_idea
+    vision = VisionFake([{"shown": "partly", "missing": "no visible scores or labels showing which answer is best"}])
+    problem, _ = await check_idea(vision, png(400, 600), SHOWS, (400, 600))
+    assert problem.startswith("idea unclear:") and "scores" not in problem and "labels" not in problem
+    assert "never text, labels, numbers or scores" in vision.calls[0][0][0].content
+
+
+@pytest.mark.parametrize("words", ["red X cross", "red cross + lines", "five green check marks", "red cross symbol", "right arrow",
+                                   "arrow pointing to the stack", "upward arrow", "check and cross marks", "→ arrow", "❌", "✅", "➡️", "✔️"])
+def test_the_wordings_the_locate_model_uses_for_teaching_marks_are_not_text(words):
+    # all seen in econ_delivery's reports (2026-10-28): each pushed a panel to its attempt maximum and erased the mark
+    from services.art_check import _texts
+    assert _texts([{"text": words, "where": "the paper slip"}]) == []
+
+
+@pytest.mark.parametrize("words", ["EXIT arrow", "arrow 3", "big red X", "plus sign", "arrow labeled A", "5 check marks",
+                                   "arrow pointing to EXIT", "√", "×"])
+def test_marks_that_carry_writing_still_count(words):
+    from services.art_check import _texts
+    assert _texts([{"text": words, "where": "the desk"}]) == [f"{words} (on the desk)"]
+
+
+def test_any_mark_on_a_board_is_drawn_text():
+    # a board must stay blank for the exhibit the code draws: an arrow or a tick there is redrawn, as before the shapes rule
+    from services.art_check import LOCATE_PROMPT, _texts
+    assert _texts([{"text": "arrows", "where": "the whiteboard"}, {"text": "green check marks", "where": "the board's edge"}]) == [
+        "arrows (on the whiteboard)", "green check marks (on the board's edge)"]
+    assert _texts([{"text": "arrows", "where": "the cardboard box"}]) == []
+    assert "any mark drawn on a whiteboard or board is" in LOCATE_PROMPT
+
+
+async def test_the_idea_check_reads_a_json_boolean_and_partial_wordings():
+    from services.art_check import check_idea
+    image = png(400, 600)
+    assert (await check_idea(VisionFake([{"shown": True, "objects": []}]), image, SHOWS, (400, 600)))[0] is None
+    problem, _ = await check_idea(VisionFake([{"shown": "partially", "objects": []}]), image, SHOWS, (400, 600))
+    assert problem.startswith("idea unclear:")
+    problem, _ = await check_idea(VisionFake([{"shown": False, "objects": []}]), image, SHOWS, (400, 600))
+    assert problem.startswith("idea not shown:")
+
+
+def test_a_dotted_arrow_is_a_shape():
+    from services.art_check import _just_marks
+    assert _just_marks("dotted arrow") and _just_marks("two dots")
+
+
+def test_two_frames_are_stacked_into_the_panel_with_one_grounding():
+    # a teaching picture that missed its idea is redrawn as two frames: lettering reads one grounding in the panel's pixels
+    from services.art_check import compose_frames
+    top, bottom = Image.new("RGB", (1120, 832), (200, 0, 0)), Image.new("RGB", (1120, 832), (0, 0, 200))
+    first = Grounding(size=(1120, 832), heads={"papi": (112, 416, 336, 624)}, objects=[(560, 416, 1008, 832)], matches={"papi": True})
+    second = Grounding(size=(1120, 832), heads={"papi": (784, 416, 1008, 624), "kumo": (112, 416, 336, 624)},
+                       objects=[(0, 0, 1120, 416)], matches={"papi": False}, text_found=["A (on the card)"])
+    art, g = compose_frames([top, bottom], [first, second], SIZE)
+    assert art.size == SIZE and art.getpixel((10, 10)) == (200, 0, 0) and art.getpixel((10, 1530)) == (0, 0, 200)
+    # the top frame keeps papi's bubble tail; papi's head in the bottom frame is a head no speaker owns, kept clear like
+    # every head (as an object, the lettering dropped it before moving a line to the strip)
+    assert g.size == SIZE and g.heads == {"papi": (102, 384, 307, 576), "kumo": (102, 1152, 307, 1344), "#2 papi": (717, 1152, 922, 1344)}
+    assert g.objects == [(512, 384, 922, 768), (0, 768, 1024, 1152)]
+    assert g.matches == {"papi": False} and g.text_found == ["A (on the card)"] and g.board is None
+    art, g = compose_frames([top, bottom], [first, None], SIZE)   # a frame whose art could not be located adds nothing
+    assert set(g.heads) == {"papi"} and g.objects == [(512, 384, 922, 768)]
+    # most important first, as the lettering drops the last first: each frame's objects in turn, so the bottom frame's
+    # key object is not the first to go under a bubble; a box over half its own frame is the frame, not an object
+    first.objects = [(0, 0, 1120, 832), (560, 416, 1008, 832), (0, 0, 112, 104)]
+    art, g = compose_frames([top, bottom], [first, second], SIZE)
+    assert g.objects == [(512, 384, 922, 768), (0, 768, 1024, 1152), (0, 0, 102, 96)]

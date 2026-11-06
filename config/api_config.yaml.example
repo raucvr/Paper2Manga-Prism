@@ -47,8 +47,9 @@ manga_settings:
   max_attempts: 3              # art attempts per panel when the art check finds a problem (the best attempt is kept)
   pipeline: v3                 # v3: text-free art + typeset text + code-drawn charts (default); v2: the image model letters the text
   bilingual: true              # v3: letter the same art in English and Chinese (2nd language: text calls only)
-  min_panels: 16               # v3: a story has 16 to 24 panels ("long": 28 to 40); the quiz revision may add up to 4
-  max_panels: 24
+  read_figures: true           # v3: the vision model describes each figure of the PDF for the analysis, the writer and the checks (cached in output/_figures)
+  min_panels: 18               # v3: a story has 18 to 26 panels ("long": 28 to 40); fix rounds and the quiz revision may add up to 4
+  max_panels: 26
   style_anchor: false          # v2 only: pass the first finished panel as an extra reference for palette continuity
   fast: false                  # Seedream fast mode (~40 s vs ~110 s per panel)
 

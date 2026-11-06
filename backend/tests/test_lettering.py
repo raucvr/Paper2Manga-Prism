@@ -612,6 +612,10 @@ REAL_SPECS = {
     "list": {"kind": "list", "title": "What the paper showed", "items": ["28.4 BLEU English→German", "3.5 days on 8 GPUs"]},
     "links": {"kind": "links", "title": "Who does 'it' look at?", "tokens": ["The", "animal", "was", "tired", "so", "it"],
               "from": 5, "weights": [0.02, 0.6, 0.05, 0.2, 0.03, 0.1], "illustrative": True},
+    "diagram": {"kind": "diagram", "title": "Answer first, then the long text", "brief": "the answer is fixed before the text",
+                "elements": [{"type": "box", "x": 80, "y": 300, "w": 300, "h": 140, "text": "Question + answer", "tone": "red"},
+                             {"type": "arrow", "from": [380, 370], "to": [700, 370], "tone": "ink", "label": "expand"},
+                             {"type": "box", "x": 700, "y": 220, "w": 360, "h": 300, "text": "Long documents", "tone": "ink"}]},
 }
 
 
@@ -672,3 +676,127 @@ def test_chinese_digits_come_from_the_digits_font(fonts):
     assert face._chain[1] == bundled("digits")[0]             # Atkinson Hyperlegible Next: 1 / l / I and 0 / O distinct
     assert face._pick("1", False) is face._fonts[1] and face._pick("额", False) is face._fonts[0]
     assert fonts.face("en-US", 40)._pick("1", False) is fonts.face("en-US", 40)._fonts[0]   # English keeps its own
+
+
+def test_a_scenes_idea_objects_stay_clear_of_the_words_when_they_fit(fonts):
+    # the eight answer cards of a GRPO panel sat under a bubble: the boxes the idea check returns are kept clear
+    art = make_art(heads=list(HEADS_SCENE.values()))
+    lines = {"narration": "", "dialogue": [("papi", "Eight answers, one grade each."), ("kumo", "And the best ones teach?")]}
+    _, plain = letter_panel(art, panel(lines, narration=False), Grounding(size=(W, H), heads=HEADS_SCENE), "en-US", fonts)
+    first = plain["bubbles"][0]["rect"]
+    held = (first[0], first[1], first[2], first[3])           # an object exactly where the first bubble went
+    _, kept = letter_panel(art, panel(lines, narration=False), Grounding(size=(W, H), heads=HEADS_SCENE, objects=[held]), "en-US", fonts)
+    assert kept["fallback"] is False and not any(overlap(b["rect"], held) for b in kept["bubbles"])
+    whole = (0, 0, W, H)                                       # a box over half the art is the scene: the words go where they went before
+    _, ignored = letter_panel(art, panel(lines, narration=False), Grounding(size=(W, H), heads=HEADS_SCENE, objects=[whole]), "en-US", fonts)
+    assert [b["rect"] for b in ignored["bubbles"]] == [b["rect"] for b in plain["bubbles"]] and ignored["fallback"] is False
+
+
+def test_a_box_over_half_the_art_does_not_push_the_real_object_aside(fonts):
+    # the idea check sometimes boxes the whole scene: that box is no object to keep clear, the small one beside it is
+    art = make_art(heads=list(HEADS_SCENE.values()))
+    lines = {"narration": "", "dialogue": [("papi", "Eight answers, one grade each."), ("kumo", "And the best ones teach?")]}
+    _, plain = letter_panel(art, panel(lines, narration=False), Grounding(size=(W, H), heads=HEADS_SCENE), "en-US", fonts)
+    held = tuple(plain["bubbles"][0]["rect"])                  # a small object exactly where the first bubble went
+    whole = (0, 0, W, H)                                       # ...and the whole scene, listed first
+    _, kept = letter_panel(art, panel(lines, narration=False), Grounding(size=(W, H), heads=HEADS_SCENE, objects=[whole, held]),
+                           "en-US", fonts)
+    assert not any(overlap(b["rect"], held) for b in kept["bubbles"]) and not kept["strip"]
+
+
+def test_the_first_idea_object_stays_clear_even_when_a_line_must_go_to_the_strip(fonts):
+    # "These yellow erasers are unstable questions" sat on the erasers: the plan that ignored the objects covered the very
+    # prop the words named (54 of 1284 scene layouts of rounds 15-19 covered the first object more than half). The idea
+    # check lists its objects most important first; the first stays clear and the words that do not fit beside it go to
+    # the caption strip under the art
+    heads = {"papi": (0.0, 620.0, 500.0, 1536.0), "kumo": (524.0, 620.0, 1024.0, 1536.0)}   # only the top is free...
+    art = make_art(heads=list(heads.values()))
+    erasers = (120.0, 140.0, 904.0, 560.0)                                                   # ...and the erasers fill it
+    lines = {"narration": "", "dialogue": [
+        ("papi", "These yellow erasers are the unstable questions the model keeps getting wrong."),
+        ("kumo", "So the model should practice on exactly those wobbly questions until they stop wobbling?")]}
+    _, layout = letter_panel(art, panel(lines, narration=False), Grounding(size=(W, H), heads=heads, objects=[erasers]), "en-US", fonts)
+    core = L._held(erasers, L._Ctx(art, "en-US", fonts, heads))
+    assert not any(overlap(b["rect"], core) for b in layout["bubbles"])
+    strip = [i for i in (layout["strip"] or {}).get("items", []) if i.get("speaker")]
+    assert strip and len(layout["bubbles"]) + len(strip) == 2           # every line is lettered, on the art or under it
+    assert [i["speaker"] for i in strip] == ["papi", "kumo"][len(layout["bubbles"]):]   # reading order kept
+
+
+def test_a_scene_drops_the_last_idea_objects_first(fonts, monkeypatch):
+    # whole objects, then the middle of the big ones, then fewer objects from the end; the first plan with every bubble on
+    # the art wins, else the first object alone with the rest in the strip
+    small, big, other = (10.0, 10.0, 60.0, 60.0), (0.0, 0.0, 600.0, 600.0), (900.0, 10.0, 950.0, 60.0)
+    ctx = L._Ctx(Image.new("RGB", (W, H), "white"), "en-US", fonts, {}, objects=[big, small, other])
+    core = L._held(big, ctx)
+    assert core != big and L._held(small, ctx) == small
+    tried = []
+
+    def fake(ctx_, bubbles, narration_text, objects):
+        tried.append(list(objects))
+        return L._Plan(kind="scene", leftover=[] if list(objects) == [core, small] else [("papi", "x")])
+    monkeypatch.setattr(L, "_scene_plan", fake)
+    assert L._scene(ctx, [("papi", "x")], "").leftover == []
+    assert tried == [[big, small, other], [core, small, other], [core, small]]
+    tried.clear()
+    monkeypatch.setattr(L, "_scene_plan", lambda c, b, n, objects: tried.append(list(objects)) or L._Plan(kind="scene", leftover=[("papi", "x")]))
+    assert L._scene(ctx, [("papi", "x")], "").leftover and tried[-1] == [core]
+    # no try fits every bubble: the most bubbles on the art win, the earliest of equals (it keeps the most objects clear);
+    # dropping objects that freed no room covered them for nothing (round 21 review)
+    on_art = {3: 1, 2: 2, 1: 2}
+    plans = []
+
+    def placed(ctx_, bubbles, narration_text, objects):
+        plans.append(L._Plan(kind="scene", bubbles=[object()] * on_art[len(objects)], leftover=[("papi", "x")]))
+        return plans[-1]
+    monkeypatch.setattr(L, "_scene_plan", placed)
+    # tries: whole (1 on the art), middles (1), [core, small] (2), [core] (2): the earliest with 2 keeps "small" clear
+    assert L._scene(ctx, [("papi", "x")], "") is plans[2] and len(plans) == 4
+
+
+def _frame_art(heads, color, size=(1120, 832)):
+    img = Image.new("RGB", size, color)
+    d = ImageDraw.Draw(img)
+    for y in range(int(size[1] * 0.55), size[1], 12):
+        d.line([(0, y), (size[0], y + 20)], fill=(150, 120, 90), width=2)
+    for box in heads:
+        d.ellipse(box, fill=(170, 110, 60), outline=(40, 25, 10), width=4)
+    return img
+
+
+def test_a_characters_second_head_in_two_frames_stays_clear(fonts):
+    # two frames with papi and kumo in both: compose_frames gave their bottom heads to the objects, and the tries that
+    # drop the last objects first put two bubbles on kumo's second head (round 21 review); a head no speaker owns ("#2
+    # kumo") stays clear like every head
+    from services.art_check import Grounding as Located, compose_frames
+    top = {"papi": (60, 330, 400, 700), "kumo": (720, 340, 1060, 700)}
+    bottom = {"papi": (60, 60, 400, 430), "kumo": (720, 70, 1060, 440)}
+    art, g = compose_frames([_frame_art(top.values(), (238, 232, 220)), _frame_art(bottom.values(), (225, 235, 225))],
+                            [Located(size=(1120, 832), heads=top, objects=[(300, 60, 820, 330)]),
+                             Located(size=(1120, 832), heads=bottom, objects=[(300, 460, 820, 800)])], (W, H))
+    lines = {"narration": "", "dialogue": [
+        ("papi", "On the left the old answers weigh almost nothing at all, see?"),
+        ("kumo", "And after training the very same answers tip the whole scale over?"),
+        ("papi", "Exactly, the weight moved to the answers the group rewarded."),
+        ("kumo", "So the group's average decides which way the scale tips each round?")]}
+    _, layout = letter_panel(art, panel(lines, narration=False), g, "en-US", fonts)
+    for name in ("#2 papi", "#2 kumo"):
+        assert not any(overlap(b["rect"], g.heads[name]) for b in layout["bubbles"]), name
+    strip = [i for i in (layout["strip"] or {}).get("items", []) if i.get("speaker")]
+    assert len(layout["bubbles"]) + len(strip) == 4
+
+
+def test_a_tail_cut_short_at_another_head_is_dropped(fonts):
+    # The Flexibility Trap p10: Kumo's second bubble sat above Papi; its tail to Kumo stopped at Papi's head and pointed at
+    # Papi under a "Kumo" tab. Such a tail is dropped (the tab names the speaker); a tail aimed at its own speaker stays,
+    # even when another head is nearer its tip than the speaker's (28 good tails were lost to a nearest-head rule)
+    ctx = L._Ctx(Image.new("RGB", (W, H), "white"), "en-US", fonts,
+                 {"kumo": (120.0, 900.0, 380.0, 1150.0), "papi": (560.0, 520.0, 900.0, 800.0)})
+    blocked = list(ctx.heads.values())
+    over_papi = L.PlacedBubble("kumo", "Wait... what if we tie it straight?", None, 730.0, 330.0, 170.0, 110.0, ctx.stroke)
+    tails = L._tails(ctx, [over_papi], [L.blob(730.0, 330.0, 170.0, 110.0, 3)], blocked)
+    assert tails == [None]
+    ctx.heads = {"kumo": (560.0, 900.0, 900.0, 1150.0), "papi": (380.0, 520.0, 520.0, 700.0)}
+    above_kumo = L.PlacedBubble("kumo", "Look at this.", None, 730.0, 330.0, 170.0, 110.0, ctx.stroke)
+    tails = L._tails(ctx, [above_kumo], [L.blob(730.0, 330.0, 170.0, 110.0, 3)], list(ctx.heads.values()))
+    assert tails[0] is not None
