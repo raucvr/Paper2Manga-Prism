@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OnQ 开头教学预览：把模型压小之后，怎么把它教回来</title>
+<style>
+  :root {
+    --ink: #111827;
+    --muted: #4b5563;
+    --paper: #ffffff;
+    --bg: #f6f5f1;
+    --line: #d6d3cb;
+    --fixed: #4b5563;
+    --fixed-fill: #e5e7eb;
+    --student: #1d4ed8;
+    --student-fill: #dbeafe;
+    --teacher: #b45309;
+    --teacher-fill: #fef3c7;
+    --warn: #b91c1c;
+    --focus: #7c3aed;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 18px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 28px 18px 72px; }
+  header h1 { font-size: 1.55rem; line-height: 1.35; margin: 0 0 10px; letter-spacing: .02em; }
+  .status {
+    font-size: .88rem; color: var(--muted); border-left: 4px solid var(--teacher);
+    background: var(--paper); padding: 10px 14px; margin: 14px 0 0; border-radius: 0 8px 8px 0;
+  }
+  .status p { margin: 0 0 4px; }
+  .status p:last-child { margin: 0; }
+
+  .questions { background: var(--paper); border-radius: 14px; padding: 18px 20px; margin: 26px 0; border: 1px solid var(--line); }
+  .questions h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  .questions ol { margin: 0; padding-left: 1.6em; }
+  .questions li { margin: 4px 0; font-weight: 600; }
+  .questions li::marker { color: var(--student); }
+
+  .toggle { display: flex; gap: 8px; margin: 26px 0 10px; flex-wrap: wrap; }
+  .toggle button {
+    font: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
+    padding: 10px 18px; min-height: 44px; border-radius: 999px;
+    border: 2px solid var(--ink); background: var(--paper); color: var(--ink);
+  }
+  .toggle button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+  .toggle button:focus-visible, summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .toggle-hint { font-size: .85rem; color: var(--muted); margin: 0 0 12px; }
+
+  section.view > h2 { font-size: 1.25rem; margin: 18px 0 4px; }
+  .view-note { font-size: .88rem; color: var(--muted); margin: 0 0 18px; }
+
+  .panel {
+    background: var(--paper); border-radius: 16px; border: 1px solid var(--line);
+    padding: 20px 18px 14px; margin: 0 0 22px;
+  }
+  .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .num {
+    flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--ink); color: #fff; font-size: .85rem; font-weight: 700;
+  }
+  .panel h3 { font-size: 1.18rem; margin: 0; line-height: 1.4; }
+  figure { margin: 6px 0 14px; }
+  figure svg { display: block; width: 100%; height: auto; max-width: 520px; margin: 0 auto; }
+  .lines { margin: 0; padding: 0; list-style: none; }
+  .lines li { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; }
+  .who {
+    flex: none; font-size: .78rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; margin-top: 4px; line-height: 1.6;
+  }
+  .who.ask { background: var(--student-fill); color: #0b2a6b; }
+  .who.say { background: #e7e5e4; color: var(--ink); }
+  .bubble { flex: 1; }
+
+  details.src { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 6px; font-size: .84rem; color: var(--muted); }
+  details.src summary { cursor: pointer; font-weight: 600; min-height: 32px; display: list-item; }
+  details.src ul { margin: 6px 0 4px; padding-left: 1.2em; }
+  details.src li { margin: 3px 0; }
+  .ln { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem; color: var(--ink); background: #f1f0ec; padding: 0 4px; border-radius: 4px; white-space: normal; overflow-wrap: anywhere; }
+  .bound { margin: 4px 0 0; }
+
+  /* BEFORE */
+  .before .panel { border-style: dashed; }
+  .quote { margin: 0; padding: 0; list-style: none; }
+  .quote li { margin: 6px 0; }
+  .spk { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; color: var(--muted); }
+  .narr { color: var(--muted); font-style: normal; }
+  .board { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 8px; background: #fafaf9; }
+  .board strong { display: block; }
+  .board ul { margin: 6px 0 0; padding-left: 1.2em; }
+  .problems { font-size: .9rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; padding: 12px 16px; }
+  .problems h3 { font-size: .95rem; margin: 0 0 4px; }
+  .problems ul { margin: 0; padding-left: 1.2em; }
+
+  /* SVG text classes */
+  .t { font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", system-ui, sans-serif; fill: var(--ink); }
+  .tk { font-family: ui-monospace, Menlo, Consolas, "Courier New", monospace; font-size: 17px; }
+  .sm { font-size: 13px; fill: var(--muted); }
+  .md { font-size: 15px; }
+  .b { font-weight: 700; }
+  .c-fixed { fill: var(--fixed); }
+  .c-student { fill: var(--student); }
+  .c-teacher { fill: var(--teacher); }
+  .c-warn { fill: var(--warn); }
+  .box-fixed { fill: var(--fixed-fill); stroke: var(--fixed); stroke-width: 1.5; }
+  .box-student { fill: var(--student-fill); stroke: var(--student); stroke-width: 1.5; }
+  .box-shared { fill: #ffffff; stroke: var(--ink); stroke-width: 1.5; }
+  .tag { font-size: 12px; fill: var(--muted); }
+
+  .recap { background: var(--paper); border: 2px solid var(--ink); border-radius: 16px; padding: 18px 20px; margin: 30px 0 22px; }
+  .recap h2 { font-size: 1.2rem; margin: 0 0 8px; }
+  .recap dl { margin: 0; }
+  .recap dt { font-weight: 700; margin-top: 12px; }
+  .recap dd { margin: 2px 0 0; }
+  .recap .ref { font-size: .8rem; color: var(--muted); }
+
+  details.glossary, .scope { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin: 0 0 18px; }
+  details.glossary > summary { cursor: pointer; font-weight: 700; font-size: 1.02rem; min-height: 32px; }
+  .glossary dl { margin: 8px 0 0; }
+  .glossary dt { font-weight: 700; margin-top: 12px; }
+  .glossary dt span { font-weight: 400; color: var(--muted); font-size: .85rem; margin-left: 6px; }
+  .glossary dd { margin: 2px 0 0; font-size: .95rem; }
+  .scope h2 { font-size: 1rem; margin: 0 0 6px; }
+  .scope ul { margin: 0; padding-left: 1.2em; font-size: .92rem; }
+  footer { font-size: .8rem; color: var(--muted); margin-top: 28px; }
+
+  @media (max-width: 420px) {
+    body { font-size: 17px; }
+    .wrap { padding: 20px 12px 56px; }
+    .panel { padding: 16px 12px 12px; }
+    header h1 { font-size: 1.35rem; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .toggle button { transition: background .15s, color .15s; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>把模型压小之后，<br>怎么把它教回来？</h1>
+  <p style="margin:0;color:var(--muted)">OnQ 论文开头的教学预览（中文）</p>
+  <div class="status" role="note">
+    <p>10 格中文讲解草稿，配图解释每一步。只讲开头和一个核心机制，不是完整漫画。</p>
+    <details><summary>关于这份草稿</summary><p>AI 编写并经审阅修改，非产品流水线生成。第二部分（Dynamic KL）、实验结果和局限未展开。已验证桌面和手机宽度的页面交互；读者理解效果尚未验收。</p></details>
+  </div>
+</header>
+
+
+
+<div class="toggle" role="group" aria-label="切换旧版与新版开头">
+  <button type="button" id="btn-before" aria-pressed="false" aria-controls="view-before">旧版开头 BEFORE</button>
+  <button type="button" id="btn-after" aria-pressed="true" aria-controls="view-after">新版开头 AFTER</button>
+</div>
+<p class="toggle-hint">用 Tab 选中按钮，按回车或空格切换。</p>
+
+<!-- ======================= BEFORE ======================= -->
+<section class="view before" id="view-before" aria-labelledby="h-before">
+  <h2 id="h-before">旧版开头（原样引用）</h2>
+  <p class="view-note">出处：<span class="ln">samples/20261102_065630_a06e/storyboard.json</span>（language: zh-CN，version 3）里 hook 章的第 1–3 格。只摘出画面上显示的中文，逐字照搬，说话人用原文件中的 id。该目录下没有名为 storyboard.zh-CN.json 的文件。</p>
+
+  <article class="panel">
+    <div class="panel-head"><span class="num">1</span><h3>卡住的模型</h3></div>
+    <ul class="quote">
+      <li><span class="spk">旁白</span>　<span class="narr">这是论文里校准过的Qwen3-1.7B 2比特模型。</span></li>
+      <li><span class="spk">kumo</span>　这个2比特模型怎么不行？它最看好“some”，老师要“a”。</li>
+      <li><span class="spk">kumo</span>　旧的QAT用固定的全精度回答来训练它。</li>
+    </ul>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><span class="num">2</span><h3>打赌</h3></div>
+    <ul class="quote">
+      <li><span class="spk">旁白</span>　<span class="narr">作者发现了两个阻碍性能提升的核心问题。</span></li>
+      <li><span class="spk">papi</span>　这正是这篇论文要解决的问题。</li>
+      <li><span class="spk">nezu</span>　小修小补而已。我赌一个浆果挞，它修不好长任务。</li>
+    </ul>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head"><span class="num">3</span><h3>论文的主张</h3></div>
+    <ul class="quote">
+      <li><span class="spk">旁白</span>　<span class="narr">首先是论文自己的总结。</span></li>
+      <li><span class="spk">kumo</span>　我们来验证一下这些说法是否成立。</li>
+    </ul>
+    <div class="board">
+      <strong>论文的主张</strong>
+      <span class="spk">论文自己的总结</span>
+      <ul>
+        <li>QAT旨在恢复压缩后极低位大模型的推理能力</li>
+        <li>旧QAT通常只用固定的现成答案训练</li>
+        <li>旧模型长任务失败，token耗尽</li>
+        <li>两大缺陷：错配+双向误差</li>
+        <li>OnQ：提出的极低位恢复流程</li>
+        <li>OnQ在8B 2比特平均分上比BitDistiller高10.26分</li>
+      </ul>
+    </div>
+  </article>
+
+  <div class="problems">
+    <h3>旧版开头卡在哪里</h3>
+    <ul>
+      <li>第 1 格的头两句话里，“2比特”“QAT”“全精度”“老师”和具体词元一起出现，可这些都还没讲过。</li>
+      <li>第 3 格在讲机制之前，就放出了一整张主张清单和一个结果数字。</li>
+      <li>旧版没有说明量化是什么，也没有说明老师和学生是谁。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ======================= AFTER ======================= -->
+<section class="view after" id="view-after" aria-labelledby="h-after">
+  <h2 id="h-after">新版开头（编辑示范稿）</h2>
+  <p class="view-note">每格只讲一个新想法。图上标明哪些是示意，哪些原样取自论文图 2。展开“出处”可以看到对应的论文行号。</p>
+
+  <!-- 1 -->
+  <article class="panel" id="p1">
+    <div class="panel-head"><span class="num">1</span><h3>一道要写很久的题</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 130" role="img" aria-labelledby="s1t">
+        <title id="s1t">示意：模型从题目开始，一步接一步往下写，写完才停</title>
+        <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#111827"/></marker></defs>
+        <rect x="8" y="30" width="62" height="40" rx="8" class="box-shared"/>
+        <text x="39" y="56" text-anchor="middle" class="t md b">题目</text>
+        <line x1="72" y1="50" x2="88" y2="50" stroke="#111827" stroke-width="2" marker-end="url(#ar)"/>
+        <rect x="90" y="30" width="62" height="40" rx="8" class="box-student"/>
+        <text x="121" y="56" text-anchor="middle" class="t md">片段一</text>
+        <line x1="154" y1="50" x2="170" y2="50" stroke="#111827" stroke-width="2" marker-end="url(#ar)"/>
+        <rect x="172" y="30" width="62" height="40" rx="8" class="box-student"/>
+        <text x="203" y="56" text-anchor="middle" class="t md">片段二</text>
+        <line x1="236" y1="50" x2="252" y2="50" stroke="#111827" stroke-width="2" marker-end="url(#ar)"/>
+        <text x="266" y="56" text-anchor="middle" class="t md b">…</text>
+        <line x1="278" y1="50" x2="290" y2="50" stroke="#111827" stroke-width="2" marker-end="url(#ar)"/>
+        <rect x="292" y="30" width="62" height="40" rx="8" class="box-shared"/>
+        <text x="323" y="56" text-anchor="middle" class="t md b">写完</text>
+        <text x="180" y="100" text-anchor="middle" class="t md">一次生成一个文字片段</text>
+        <text x="352" y="124" text-anchor="end" class="t tag">示意</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">模型解一道复杂数学题，可能要写很长的步骤。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">它每次接着已写内容，生成下一个文字片段。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L36–L39</span> 论文分析 MATH-500 数学题，其中一些题会让原模型写出很长的回答。</li>
+        <li><span class="ln">L193–L196</span> 学生自己采样回答，每一步都以“题目＋已写部分”为条件。</li>
+        <li><span class="ln">L40–L42</span> 回答越长，学生越依赖自己已经写出的内容。</li>
+      </ul>
+      <p class="bound">边界：“文字片段”指 token，可能是词的一部分或标点，不等于一整步推理。这里不给题目内容或长度数字。</p>
+    </details>
+  </article>
+
+<div class="questions">
+  <h2>读之前，先带着三个问题</h2>
+  <ol>
+    <li>为什么要把模型压小？压小会改变什么？</li>
+    <li>旧的补救训练，哪里没对上？</li>
+    <li>OnQ 换了什么做法？作者为什么认为它有帮助？</li>
+  </ol>
+</div>
+
+  <!-- 2 -->
+  <article class="panel" id="p2">
+    <div class="panel-head"><span class="num">2</span><h3>为什么想把它变小</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 170" role="img" aria-labelledby="s2t">
+        <title id="s2t">示意：大方块代表原模型，压小后变成小方块，占用内存更少</title>
+        <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#111827"/></marker>
+          <pattern id="grid" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M14 0 L0 0 0 14" fill="none" stroke="#9ca3af" stroke-width="1"/></pattern></defs>
+        <rect x="24" y="14" width="140" height="104" rx="6" fill="url(#grid)" stroke="#111827" stroke-width="2"/>
+        <text x="94" y="140" text-anchor="middle" class="t md b">原模型</text>
+        <line x1="178" y1="66" x2="222" y2="66" stroke="#111827" stroke-width="2.5" marker-end="url(#ar2)"/>
+        <text x="200" y="56" text-anchor="middle" class="t sm">压小</text>
+        <rect x="240" y="40" width="76" height="54" rx="6" fill="url(#grid)" stroke="#1d4ed8" stroke-width="2"/>
+        <text x="278" y="116" text-anchor="middle" class="t md b c-student">压小后</text>
+        <text x="278" y="138" text-anchor="middle" class="t sm">占用内存更少</text>
+        <text x="352" y="164" text-anchor="end" class="t tag">示意，大小不按比例</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who ask">提问</span><span class="bubble">为什么要把模型变小？</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">大模型很占内存。压小后，部署更方便。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L27–L28</span> 低位量化降低大模型的内存占用，让部署更实际。</li>
+      </ul>
+      <p class="bound">边界：不说压小后就一定能装进某台具体设备。论文开头没有给出这种量化结论。</p>
+    </details>
+  </article>
+
+  <!-- 3 -->
+  <article class="panel" id="p3">
+    <div class="panel-head"><span class="num">3</span><h3>用更粗的刻度存数字</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 190" role="img" aria-labelledby="s3t">
+        <title id="s3t">示意：上方是原来的数，可以落在任意位置；下方只有固定档位，每个数被挪到最近的档位</title>
+        <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker></defs>
+        <text x="20" y="24" class="t sm">原来：可以是任意值</text>
+        <line x1="20" y1="50" x2="340" y2="50" stroke="#9ca3af" stroke-width="2"/>
+        <g fill="#1d4ed8">
+          <circle cx="40" cy="50" r="6"/><circle cx="95" cy="50" r="6"/><circle cx="170" cy="50" r="6"/><circle cx="230" cy="50" r="6"/><circle cx="310" cy="50" r="6"/>
+        </g>
+        <g stroke="#1d4ed8" stroke-width="2" fill="none" marker-end="url(#ar3)">
+          <line x1="40" y1="58" x2="21" y2="120"/><line x1="95" y1="58" x2="110" y2="120"/><line x1="170" y1="58" x2="158" y2="120"/><line x1="230" y1="58" x2="247" y2="120"/><line x1="310" y1="58" x2="295" y2="120"/>
+        </g>
+        <line x1="20" y1="130" x2="340" y2="130" stroke="#111827" stroke-width="2"/>
+        <g stroke="#111827" stroke-width="3">
+          <line x1="20" y1="122" x2="20" y2="138"/><line x1="65.7" y1="122" x2="65.7" y2="138"/><line x1="111.4" y1="122" x2="111.4" y2="138"/><line x1="157.1" y1="122" x2="157.1" y2="138"/><line x1="202.9" y1="122" x2="202.9" y2="138"/><line x1="248.6" y1="122" x2="248.6" y2="138"/><line x1="294.3" y1="122" x2="294.3" y2="138"/><line x1="340" y1="122" x2="340" y2="138"/>
+        </g>
+        <path d="M230 150 L230 156 L248.6 156 L248.6 150" fill="none" stroke="#b91c1c" stroke-width="2"/>
+        <text x="239" y="174" text-anchor="middle" class="t sm c-warn b">数值可能改变</text>
+        <text x="20" y="160" class="t sm">量化后：只能落在档位上</text>
+        <text x="352" y="186" text-anchor="end" class="t tag">示意，非论文数据</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">用较少几档，来保存模型里的数字。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">这叫量化。存着更省空间，但有些数会变。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L133–L140</span> 公式 1：权重除以尺度、四舍五入、加零点，再截到 [0, 2^N−1]；前向计算使用还原后的权重。</li>
+        <li><span class="ln">L138–L139</span> 同一组权重共用尺度和零点。</li>
+      </ul>
+      <p class="bound">边界：图中的档位数量只是示意，不代表论文设置。位数和档位的关系放在术语表。</p>
+    </details>
+  </article>
+
+  <!-- 4 -->
+  <article class="panel" id="p4">
+    <div class="panel-head"><span class="num">4</span><h3>老师和学生，是两个模型</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 160" role="img" aria-labelledby="s4t">
+        <title id="s4t">示意：老师是压小前的原模型，训练中不改动；学生是压小后的模型，要再训练，向老师看齐</title>
+        <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#111827"/></marker></defs>
+        <rect x="8" y="16" width="140" height="104" rx="12" fill="#fef3c7" stroke="#b45309" stroke-width="2"/>
+        <text x="78" y="46" text-anchor="middle" class="t md b c-teacher">老师</text>
+        <text x="78" y="74" text-anchor="middle" class="t sm" style="fill:#111827">压小前的原模型</text>
+        <text x="78" y="98" text-anchor="middle" class="t sm">训练中不改动</text>
+        <rect x="212" y="16" width="140" height="104" rx="12" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2"/>
+        <text x="282" y="46" text-anchor="middle" class="t md b c-student">学生</text>
+        <text x="282" y="74" text-anchor="middle" class="t sm" style="fill:#111827">压小后的模型</text>
+        <text x="282" y="98" text-anchor="middle" class="t sm">要再训练</text>
+        <line x1="208" y1="68" x2="154" y2="68" stroke="#111827" stroke-width="2" marker-end="url(#ar4)"/>
+        <text x="180" y="142" text-anchor="middle" class="t sm">学生向老师看齐</text>
+        <text x="352" y="156" text-anchor="end" class="t tag">示意</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">压小可能伤到推理，所以还要继续训练。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">让压小后的学生，向原来的老师模型学习。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L28–L30</span> 前人工作报告，低精度推理模型准确率明显下降、生成效率变低（论文的引述）。</li>
+        <li><span class="ln">L30–L33</span> QAT 用量化后的前向计算调整参数，通常由原始全精度模型监督。</li>
+        <li><span class="ln">L74–L75</span> 老师是冻结的全精度模型。<span class="ln">L243–L244</span> 每个学生由它对应的原始 BF16 模型监督。</li>
+      </ul>
+      <p class="bound">边界：“看齐”指向老师的下一个词概率分布靠拢，不表示老师掌握事实真相。</p>
+    </details>
+  </article>
+
+  <!-- 5 -->
+  <article class="panel" id="p5">
+    <div class="panel-head"><span class="num">5</span><h3>旧做法：沿着备好的答案练</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 180" role="img" aria-labelledby="s5t">
+        <title id="s5t">灰色固定路线 “… not the case . So …”（取自论文图 2），每个词下方有老师标记，表示老师在这一步给出下一个词的倾向</title>
+        <text x="20" y="26" class="t sm b c-fixed">固定路线（事先备好）</text>
+        <g class="tk">
+          <rect x="20" y="40" width="26" height="32" rx="6" class="box-fixed"/><text x="33" y="62" text-anchor="middle" class="t tk">…</text>
+          <rect x="52" y="40" width="48" height="32" rx="6" class="box-fixed"/><text x="76" y="62" text-anchor="middle" class="t tk">not</text>
+          <rect x="106" y="40" width="48" height="32" rx="6" class="box-fixed"/><text x="130" y="62" text-anchor="middle" class="t tk">the</text>
+          <rect x="160" y="40" width="58" height="32" rx="6" class="box-fixed"/><text x="189" y="62" text-anchor="middle" class="t tk">case</text>
+          <rect x="224" y="40" width="26" height="32" rx="6" class="box-fixed"/><text x="237" y="62" text-anchor="middle" class="t tk">.</text>
+          <rect x="256" y="40" width="38" height="32" rx="6" class="box-fixed"/><text x="275" y="62" text-anchor="middle" class="t tk">So</text>
+          <rect x="300" y="40" width="26" height="32" rx="6" class="box-fixed"/><text x="313" y="62" text-anchor="middle" class="t tk">…</text>
+        </g>
+        <g stroke="#b45309" stroke-width="1.5">
+          <line x1="33" y1="72" x2="33" y2="90"/><line x1="76" y1="72" x2="76" y2="90"/><line x1="130" y1="72" x2="130" y2="90"/><line x1="189" y1="72" x2="189" y2="90"/><line x1="237" y1="72" x2="237" y2="90"/><line x1="275" y1="72" x2="275" y2="90"/>
+        </g>
+        <g fill="#b45309">
+          <circle cx="33" cy="100" r="10"/><circle cx="76" cy="100" r="10"/><circle cx="130" cy="100" r="10"/><circle cx="189" cy="100" r="10"/><circle cx="237" cy="100" r="10"/><circle cx="275" cy="100" r="10"/>
+        </g>
+        <g font-size="12" fill="#ffffff" text-anchor="middle" font-weight="700">
+          <text x="33" y="104" class="t" style="fill:#fff">师</text><text x="76" y="104" class="t" style="fill:#fff">师</text><text x="130" y="104" class="t" style="fill:#fff">师</text><text x="189" y="104" class="t" style="fill:#fff">师</text><text x="237" y="104" class="t" style="fill:#fff">师</text><text x="275" y="104" class="t" style="fill:#fff">师</text>
+        </g>
+        <text x="20" y="138" class="t sm"><tspan class="c-teacher b">师</tspan>＝老师对下一段文字的偏好</text>
+        <text x="352" y="172" text-anchor="end" class="t tag">词序列：论文图 2；标记为示意</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">旧做法：沿着事先备好的答案训练。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">每一步，都学老师更倾向接哪些文字。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L8</span> 现有方法通常在固定回答序列上用原始全精度模型监督量化学生。</li>
+        <li><span class="ln">L33–L35</span> 这些蒸馏方法在固定回答序列上训练，效果取决于训练前缀能否覆盖学生推理时遇到的前缀。</li>
+        <li><span class="ln">L40</span> 固定回答蒸馏只监督参考前缀。<span class="ln">L95–L96</span> 几种基线都在固定训练序列上计算老师监督。</li>
+        <li><span class="ln">L102–L103</span> 图 2 固定路线：“… not the case . So …”（PDF 抽取中的多余空格已合并）。</li>
+      </ul>
+      <p class="bound">边界：不说固定答案是老师写的（基线用的问答对来自数据集，见 <span class="ln">L489–L490</span>），也不说它对或错。</p>
+    </details>
+  </article>
+
+  <!-- 6 -->
+  <article class="panel" id="p6">
+    <div class="panel-head"><span class="num">6</span><h3>补救后，仍可能写不完</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 150" role="img" aria-labelledby="s6t">
+        <title id="s6t">示意：原模型在长度上限之前停下；补救后的学生写到上限还没停</title>
+        <defs><marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker></defs>
+        <line x1="290" y1="14" x2="290" y2="118" stroke="#b91c1c" stroke-width="2" stroke-dasharray="6 5"/>
+        <text x="290" y="134" text-anchor="middle" class="t sm c-warn b">长度上限</text>
+        <text x="10" y="44" class="t sm b">原模型</text>
+        <line x1="104" y1="40" x2="226" y2="40" stroke="#4b5563" stroke-width="5" stroke-linecap="round"/>
+        <rect x="228" y="31" width="18" height="18" fill="#111827"/>
+        <text x="254" y="45" class="t sm">停</text>
+        <text x="10" y="90" class="t sm b c-student">补救后</text>
+        <line x1="104" y1="86" x2="288" y2="86" stroke="#1d4ed8" stroke-width="5" stroke-linecap="round"/>
+        <line x1="292" y1="86" x2="336" y2="86" stroke="#1d4ed8" stroke-width="3" stroke-dasharray="4 4" marker-end="url(#ar6)"/>
+        <text x="314" y="76" text-anchor="middle" class="t sm c-student">没停</text>
+        <text x="352" y="146" text-anchor="end" class="t tag">示意，非论文数据</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who ask">提问</span><span class="bubble">这样补救，问题就解决了吗？</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">论文测试的长题中，它常写到长度上限仍没结束。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L9–L11</span> QAT 之后的低位模型在长推理任务上仍然吃力，常常在原模型够用的 token 预算内停不下来。</li>
+        <li><span class="ln">L36–L40</span> Qwen3-1.7B 2 比特、MATH-500：对原模型会写得很长的题，QAT 基线常常写到 token 上限（图 1b）。</li>
+      </ul>
+      <p class="bound">边界：示意图不是图 1 的数据，这里不给百分比。“它”指用旧做法补救过的低位学生。</p>
+    </details>
+  </article>
+
+  <!-- 7 -->
+  <article class="panel" id="p7">
+    <div class="panel-head"><span class="num">7</span><h3>自己写时，可能换一条路</h3></div>
+    <figure>
+      <svg viewBox="0 0 380 240" role="img" aria-labelledby="s7t">
+        <title id="s7t">取自论文图 2：已写出 “… not the case .” 之后，固定路线接 “So …”，学生自己写出的是 “Wait , the problem says …”</title>
+        <text x="20" y="24" class="t sm b">已写出的部分</text>
+        <text x="372" y="24" text-anchor="end" class="t tag">词序列：论文图 2</text>
+        <rect x="20" y="36" width="26" height="32" rx="6" class="box-shared"/><text x="33" y="58" text-anchor="middle" class="t tk">…</text>
+        <rect x="52" y="36" width="48" height="32" rx="6" class="box-shared"/><text x="76" y="58" text-anchor="middle" class="t tk">not</text>
+        <rect x="106" y="36" width="48" height="32" rx="6" class="box-shared"/><text x="130" y="58" text-anchor="middle" class="t tk">the</text>
+        <rect x="160" y="36" width="58" height="32" rx="6" class="box-shared"/><text x="189" y="58" text-anchor="middle" class="t tk">case</text>
+        <rect x="224" y="36" width="26" height="32" rx="6" class="box-shared"/><text x="237" y="58" text-anchor="middle" class="t tk">.</text>
+        <!-- fork connector -->
+        <path d="M237 68 L237 84 L8 84 L8 186 L16 186" fill="none" stroke="#1d4ed8" stroke-width="2"/>
+        <path d="M8 84 L8 128 L16 128" fill="none" stroke="#4b5563" stroke-width="2"/>
+        <!-- fixed branch -->
+        <rect x="20" y="112" width="38" height="32" rx="6" class="box-fixed"/><text x="39" y="134" text-anchor="middle" class="t tk">So</text>
+        <rect x="64" y="112" width="26" height="32" rx="6" class="box-fixed"/><text x="77" y="134" text-anchor="middle" class="t tk">…</text>
+        <text x="100" y="133" class="t sm b c-fixed">旧训练练的路</text>
+        <!-- student branch -->
+        <rect x="14" y="164" width="350" height="44" rx="10" fill="none" stroke="#b91c1c" stroke-width="1.5" stroke-dasharray="5 4"/>
+        <rect x="20" y="170" width="58" height="32" rx="6" class="box-student"/><text x="49" y="192" text-anchor="middle" class="t tk">Wait</text>
+        <rect x="84" y="170" width="26" height="32" rx="6" class="box-student"/><text x="97" y="192" text-anchor="middle" class="t tk">,</text>
+        <rect x="116" y="170" width="48" height="32" rx="6" class="box-student"/><text x="140" y="192" text-anchor="middle" class="t tk">the</text>
+        <rect x="170" y="170" width="88" height="32" rx="6" class="box-student"/><text x="214" y="192" text-anchor="middle" class="t tk">problem</text>
+        <rect x="264" y="170" width="58" height="32" rx="6" class="box-student"/><text x="293" y="192" text-anchor="middle" class="t tk">says</text>
+        <rect x="328" y="170" width="26" height="32" rx="6" class="box-student"/><text x="341" y="192" text-anchor="middle" class="t tk">…</text>
+        <text x="20" y="230" class="t sm b c-student">学生自己写的路：<tspan class="c-warn">未必练过</tspan></text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">学生自己写时，可能接上 Wait（等一下）。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">接下来的内容变了，旧训练未必覆盖。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L102–L107</span> 图 2：固定路线 “… not the case . So …”；量化模型的续写 “… not the case . Wait , the problem says …”。</li>
+        <li><span class="ln">L40–L41</span> 量化改变了学生的生成方式，固定回答蒸馏只监督参考前缀。</li>
+        <li><span class="ln">L11–L13</span> 固定回答监督使训练前缀和学生生成时的前缀不一致。</li>
+      </ul>
+      <p class="bound">边界：论文没有说 Wait 是错误，也没有说这次分岔导致了截断或答错。</p>
+    </details>
+  </article>
+
+  <!-- 8 -->
+  <article class="panel" id="p8">
+    <div class="panel-head"><span class="num">8</span><h3>长回答，更容易偏离</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 170" role="img" aria-labelledby="s8t">
+        <title id="s8t">示意：灰色固定路线和蓝色学生路线从同一点出发，越往后分得越开</title>
+        <defs><marker id="ar8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#111827"/></marker></defs>
+        <circle cx="24" cy="40" r="6" fill="#111827"/>
+        <line x1="24" y1="40" x2="330" y2="40" stroke="#4b5563" stroke-width="4"/>
+        <text x="330" y="30" text-anchor="end" class="t sm b c-fixed">练过的路</text>
+        <path d="M24 40 Q 180 44 330 118" fill="none" stroke="#1d4ed8" stroke-width="4"/>
+        <text x="330" y="138" text-anchor="end" class="t sm b c-student">学生的路</text>
+        <line x1="120" y1="40" x2="120" y2="50" stroke="#b91c1c" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="120" y="68" text-anchor="middle" class="t sm c-warn">差得少</text>
+        <line x1="290" y1="40" x2="290" y2="96" stroke="#b91c1c" stroke-width="2" stroke-dasharray="3 3"/>
+        <text x="262" y="74" text-anchor="end" class="t sm c-warn">差得多</text>
+        <line x1="24" y1="150" x2="300" y2="150" stroke="#111827" stroke-width="1.5" marker-end="url(#ar8)"/>
+        <text x="24" y="142" class="t sm">写得越长</text>
+        <text x="352" y="166" text-anchor="end" class="t tag">示意，非论文数据</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">每次续写，都接着自己已经写出的内容。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">作者观察到：回答越长，这种偏离越明显。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L40–L42</span> 回答越长，学生越依赖自己的输出，上下文离参考前缀越远。</li>
+        <li><span class="ln">L12–L13</span> 这种轨迹偏离随回答变长而增大。</li>
+      </ul>
+      <p class="bound">边界：曲线形状只是示意，论文没有给出这种距离曲线。</p>
+    </details>
+  </article>
+
+  <!-- 9 -->
+  <article class="panel" id="p9">
+    <div class="panel-head"><span class="num">9</span><h3>OnQ：先让学生自己写</h3></div>
+    <figure>
+      <svg viewBox="0 0 380 270" role="img" aria-labelledby="s9t">
+        <title id="s9t">学生自己写出 “… not the case . Wait , the problem says …”（取自论文图 2），老师在每一步给出下一个词的倾向；学生调整后再写一轮</title>
+        <defs><marker id="ar9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker></defs>
+        <text x="20" y="22" class="t sm b c-student">学生的路</text>
+        <rect x="20" y="32" width="26" height="32" rx="6" class="box-student"/><text x="33" y="54" text-anchor="middle" class="t tk">…</text>
+        <rect x="52" y="32" width="48" height="32" rx="6" class="box-student"/><text x="76" y="54" text-anchor="middle" class="t tk">not</text>
+        <rect x="106" y="32" width="48" height="32" rx="6" class="box-student"/><text x="130" y="54" text-anchor="middle" class="t tk">the</text>
+        <rect x="160" y="32" width="58" height="32" rx="6" class="box-student"/><text x="189" y="54" text-anchor="middle" class="t tk">case</text>
+        <rect x="224" y="32" width="26" height="32" rx="6" class="box-student"/><text x="237" y="54" text-anchor="middle" class="t tk">.</text>
+        <rect x="20" y="86" width="58" height="32" rx="6" class="box-student"/><text x="49" y="108" text-anchor="middle" class="t tk">Wait</text>
+        <rect x="84" y="86" width="26" height="32" rx="6" class="box-student"/><text x="97" y="108" text-anchor="middle" class="t tk">,</text>
+        <rect x="116" y="86" width="48" height="32" rx="6" class="box-student"/><text x="140" y="108" text-anchor="middle" class="t tk">the</text>
+        <rect x="170" y="86" width="88" height="32" rx="6" class="box-student"/><text x="214" y="108" text-anchor="middle" class="t tk">problem</text>
+        <rect x="264" y="86" width="58" height="32" rx="6" class="box-student"/><text x="293" y="108" text-anchor="middle" class="t tk">says</text>
+        <rect x="328" y="86" width="26" height="32" rx="6" class="box-student"/><text x="341" y="108" text-anchor="middle" class="t tk">…</text>
+        <g fill="#b45309">
+          <circle cx="33" cy="73" r="5"/><circle cx="76" cy="73" r="5"/><circle cx="130" cy="73" r="5"/><circle cx="189" cy="73" r="5"/><circle cx="237" cy="73" r="5"/>
+          <circle cx="49" cy="127" r="5"/><circle cx="97" cy="127" r="5"/><circle cx="140" cy="127" r="5"/><circle cx="214" cy="127" r="5"/><circle cx="293" cy="127" r="5"/>
+        </g>
+        <!-- Teacher reads an actual student prefix; no invented probabilities. -->
+        <rect x="14" y="146" width="352" height="78" rx="10" fill="#fffbeb" stroke="#b45309" stroke-width="1.5"/>
+        <text x="26" y="170" class="t sm" style="fill:#111827">已写：<tspan class="tk" style="font-size:15px">… Wait , the problem</tspan></text>
+        <text x="26" y="198" class="t sm b c-teacher">老师：接下来，更倾向哪些文字？</text>
+        <text x="356" y="216" text-anchor="end" class="t tag">过程示意</text>
+        <!-- loop -->
+        <text x="20" y="252" class="t sm b c-student">↻ 调整后再写一轮</text>
+        <text x="372" y="266" text-anchor="end" class="t tag">词序列：图 2；指导过程示意</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">OnQ 让学生先自己写，再让老师看这份回答。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">老师逐步给出下一段文字的偏好；学生学习后，再写一轮。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L17–L18</span> 从块级校准出发，量化学生生成回答，并在自己的前缀上接受全精度老师监督。</li>
+        <li><span class="ln">L125–L129</span> 学生采样回答，老师在同样的前缀上给出下一个 token 的分布。</li>
+        <li><span class="ln">L193–L197</span> 老师在每个学生生成的前缀上给出分布，包括含有学生早先错误的前缀。</li>
+        <li><span class="ln">L226–L230</span> 更新后的学生生成新的回答，让监督对准学生当前会走到的前缀。</li>
+        <li><span class="ln">L106–L108</span> 图 2 左侧 “on-policy (ours)”：在量化前缀上给出全精度目标。</li>
+      </ul>
+      <p class="bound">边界：老师给的是它自己的下一个 token 分布（蒸馏），不是事实纠错。没有展示或编造老师的具体概率。</p>
+    </details>
+  </article>
+
+  <!-- 10 -->
+  <article class="panel" id="p10">
+    <div class="panel-head"><span class="num">10</span><h3>为什么这样教</h3></div>
+    <figure>
+      <svg viewBox="0 0 360 170" role="img" aria-labelledby="s10t">
+        <title id="s10t">示意：固定答案未必覆盖学生的续写；OnQ 使用学生本轮生成的内容来训练，更新后重新生成</title>
+        <text x="10" y="26" class="t sm b">旧做法</text>
+        <line x1="80" y1="22" x2="320" y2="22" stroke="#4b5563" stroke-width="4"/>
+        <path d="M80 22 Q 200 26 320 58" fill="none" stroke="#1d4ed8" stroke-width="4"/>
+        <text x="338" y="46" text-anchor="middle" class="t md b c-warn">≠</text>
+        <text x="200" y="76" text-anchor="middle" class="t sm">固定答案未必覆盖学生的续写</text>
+        <text x="10" y="116" class="t sm b">OnQ</text>
+        <path d="M80 110 Q 200 114 320 140" fill="none" stroke="#1d4ed8" stroke-width="4"/>
+        <g fill="#b45309"><circle cx="110" cy="111" r="5"/><circle cx="150" cy="112" r="5"/><circle cx="190" cy="114" r="5"/><circle cx="230" cy="118" r="5"/><circle cx="270" cy="125" r="5"/><circle cx="305" cy="135" r="5"/></g>
+        <text x="338" y="130" text-anchor="middle" class="t md b c-student">↻</text>
+        <text x="200" y="160" text-anchor="middle" class="t sm">用本轮自己写的内容练</text>
+        <text x="352" y="104" text-anchor="end" class="t tag">示意</text>
+      </svg>
+    </figure>
+    <ul class="lines">
+      <li><span class="who say">讲解</span><span class="bubble">练习材料，来自学生这一轮自己写出的内容。</span></li>
+      <li><span class="who say">讲解</span><span class="bubble">这样更贴近它会遇到的情况；是否有效，还要看实验。</span></li>
+    </ul>
+    <details class="src"><summary>出处</summary>
+      <ul>
+        <li><span class="ln">paper.txt L42–L43</span> 轨迹偏离促使作者让老师在学生自己的轨迹上监督。</li>
+        <li><span class="ln">L128–L129</span> 这种同策略监督用来应对轨迹偏离（原文：addresses trajectory divergence）。</li>
+        <li><span class="ln">L113–L116</span> 相关领域认为，在学习者自己的输出上训练可以缓解暴露偏差。</li>
+      </ul>
+      <p class="bound">边界：只转述作者的动机和设计意图，不承诺完全恢复，这里也不引用实验结果。</p>
+    </details>
+  </article>
+
+  <div class="recap">
+    <h2>回到开头的三个问题</h2>
+    <dl>
+      <dt>1. 为什么要把模型压小？压小会改变什么？</dt>
+      <dd>压小是为了少占内存。量化用更少档位存数字，节省空间，也可能改变模型的计算。</dd>
+      <dt>2. 旧的补救训练，哪里没对上？</dt>
+      <dd>旧方法沿着固定答案训练；学生自己写的内容可能不同，长回答中的偏离更明显。</dd>
+      <dt>3. OnQ 换了什么做法？作者为什么认为它有帮助？</dt>
+      <dd>让学生先写，老师针对它已写出的内容指导下一步。训练更贴近学生本轮的行为；效果和边界仍要看实验。</dd>
+    </dl>
+  </div>
+</section>
+
+<details class="glossary">
+  <summary>术语表（可选，读完再看）</summary>
+  <dl>
+    <dt>参数 / 权重<span>parameters / weights</span></dt><dd>模型内部决定输出的大量数字，量化处理的就是这些权重。<span class="ln">L133–L140</span></dd>
+    <dt>量化<span>quantization</span></dt><dd>把每个权重四舍五入成一个 N 比特整数编码，取值范围 0 到 2^N−1，计算时再按尺度和零点还原。<span class="ln">L133–L138</span></dd>
+    <dt>2 比特 / 3 比特<span>W2 / W3</span></dt><dd>论文研究的两种权重位宽。位数越少，可用的档位越少。<span class="ln">L239–L240</span></dd>
+    <dt>全精度模型<span>full-precision model</span></dt><dd>没有量化的原模型。本文用它当老师，训练中保持冻结。<span class="ln">L74–L75</span></dd>
+    <dt>量化感知训练（QAT）<span>quantization-aware training</span></dt><dd>量化之后，用量化后的前向计算继续训练参数，通常由全精度模型来监督。<span class="ln">L8, L30–L33</span></dd>
+    <dt>蒸馏<span>distillation</span></dt><dd>让学生的下一个 token 概率分布向老师的分布靠拢。它学的是老师的倾向，不是由外部判定的对错。<span class="ln">L32–L33, L195</span></dd>
+    <dt>token / 词元<span>token</span></dt><dd>模型一次写出的最小单位，可能是一个词、词的一部分或一个标点。正文口语化地称为“文字片段”。</dd>
+    <dt>token 预算 / 长度上限<span>token budget</span></dt><dd>允许一个回答写到的最大长度。写到上限还没结束，回答就会被截断。<span class="ln">L9–L11, L38–L39</span></dd>
+    <dt>前缀<span>prefix</span></dt><dd>到某一步为止已经写出的内容（包括题目）。下一个 token 是以它为条件预测的。<span class="ln">L195–L196</span></dd>
+    <dt>固定回答监督<span>fixed-response supervision</span></dt><dd>只在事先备好的固定回答序列上计算老师监督。<span class="ln">L8, L33, L40</span></dd>
+    <dt>轨迹偏离<span>trajectory divergence</span></dt><dd>训练时的前缀和学生自己生成时遇到的前缀不一致，而且回答越长偏得越远。<span class="ln">L11–L13, L40–L42</span></dd>
+    <dt>同策略蒸馏（OPD）<span>on-policy distillation</span></dt><dd>老师监督的是学生自己生成的前缀，学生当前的行为本身成为训练分布的一部分。<span class="ln">L16–L18, L115–L116, L125–L129</span></dd>
+    <dt>块级校准<span>block-wise calibration</span></dt><dd>OnQ 的起点：逐个 Transformer 块，让量化块的输出接近全精度块的输出。<span class="ln">L141–L143, L185–L191</span></dd>
+    <dt>Dynamic KL（本预览未展开）<span>candidate-wise Dynamic KL</span></dt><dd>OnQ 的第二部分。它处理另一个问题：学生在同一个前缀上，对一些候选词估低、对另一些估高。本预览没有讲这一部分。<span class="ln">L14–L20, L198–L215</span></dd>
+  </dl>
+</details>
+
+<div class="scope">
+  <h2>本预览没有包含</h2>
+  <ul>
+    <li>第二个问题（双向概率误差）和 Dynamic KL</li>
+    <li>回答长度上限的分阶段安排、训练数据和超参数</li>
+    <li>全部实验结果和数字，以及与基线的比较、消融实验和局限</li>
+  </ul>
+</div>
+
+<footer>
+  <p>论文：Right on Q: Recovering Reasoning under Quantization via Self-Generated Trajectories（Zheng et al.）。行号对应 <span class="ln">samples/20261102_065630_a06e/paper.txt</span>。<a href="content.json">查看可编辑脚本</a> · <a href="README.md">来源与验证记录</a>。</p>
+</footer>
+
+</div>
+<script>
+(function () {
+  var bB = document.getElementById('btn-before');
+  var bA = document.getElementById('btn-after');
+  var vB = document.getElementById('view-before');
+  var vA = document.getElementById('view-after');
+  if (!bB || !bA || !vB || !vA) return;
+  function show(which) {
+    var before = which === 'before';
+    vB.hidden = !before;
+    vA.hidden = before;
+    bB.setAttribute('aria-pressed', before ? 'true' : 'false');
+    bA.setAttribute('aria-pressed', before ? 'false' : 'true');
+  }
+  bB.addEventListener('click', function () { show('before'); });
+  bA.addEventListener('click', function () { show('after'); });
+  show('after');
+})();
+</script>
+</body>
+</html>

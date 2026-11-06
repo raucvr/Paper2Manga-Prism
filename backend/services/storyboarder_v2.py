@@ -31,6 +31,7 @@ from typing import Optional
 
 from engines.base import BaseEngine, GenerationConfig, Message
 from services.paper_extractor import PaperText
+from services.reader_review import CONTRACT, is_novice, review_story, transcript as reader_transcript
 
 
 # ----------------------------------------------------------------------------- data
@@ -1415,7 +1416,9 @@ def brief_prompt_v3(paper: PaperText, abstract: str) -> str:
     caps = "\n".join(paper.captions[:20])
     abstract_block = abstract or ("(no abstract heading was found: take the claims from the paper's own summary of its problem, "
                                   "contributions and results in the introduction and conclusion, quoting those sentences)")
-    return f"""Read the paper and its ABSTRACT and write a compact, faithful BRIEF for a manga adaptation. The manga is judged by one test: a reader who never saw the paper must come away able to explain everything the abstract says, with its numbers.
+    return f"""Read the paper and its ABSTRACT and write a compact, faithful BRIEF for a manga adaptation. A newcomer must understand the task, problem, method and why its steps help; the story must also preserve the abstract's facts, numbers and conditions.
+
+Plan for a novice: enough foundations for the concrete goal and problem, then mechanism steps and why each helps before terminology and data. The opening lists 2-3 plain reader questions; detailed claims and exact evidence are taught later across successive panels.
 
 Rules: every statement must come from the paper; copy exact numbers, dataset names, baselines and units; if something is unclear say "unclear" instead of guessing.
 
@@ -1423,6 +1426,7 @@ Output JSON only:
 {{
  "title": "paper title",
  "field": "one phrase",
+ "beginner_plan": {{"goal": "concrete task", "foundations": ["necessary concepts in dependency order"], "opening_questions": ["2-3 plain reader questions, no result numbers"], "steps": [{{"what": "one mechanism step", "why": "paper-supported reason it helps"}}]}},
  "abstract_claims": [{{"id": 0, "text": "the claim in plain words, one line", "quote": "the exact words of the abstract it comes from"}}],
  "problem": "2-3 sentences: what was hard/slow/wrong before, in plain language",
  "key_idea": "ONE sentence a smart teenager could repeat",
@@ -1584,13 +1588,81 @@ def _examples_block(brief: dict) -> str:
         f"- {e['text']}" + (f" ({e['source']})" if e.get("source") else "") for e in examples)
 
 
+NOVICE_SEQUENCE = """NOVICE READER CONTRACT (novice_v1)
+Plan enough beginner foundations: concrete goal -> 2-3 plain reader questions -> necessary
+background -> concrete problem -> mechanism steps and why EACH helps -> terms and exact data
+when needed -> limits -> answers to the opening questions. Use existing problem/idea/how beats
+for foundations; no new beat is required. Introduce at most one new concept per panel, explain
+its purpose before naming it. The opening claims list is QUESTIONS, never a dense claims board.
+Keep every factual detail, qualifier, comparison and exact number across the whole story.
+One claim may span successive teaching panels; keep its id on each. Never restuff a complete
+claim into one panel or into the opening questions to satisfy coverage, a quiz or a budget.
+The recap answers the questions in plain words, not lexical copies. Preserve question order.
+Use brief visible illustrative-example labels and source-boundary statements wherever needed.
+An illustration is not a measured outcome. Never invent results, example trajectories or causality;
+show only supported steps and distinguish aggregate evidence from a single example.
+"""
+
+
+def novice_prompt(prompt: str) -> str:
+    """Replace legacy packing instructions, retaining all shared data and drawing rules.
+
+    Applied only at novice call sites; old boards keep their original prompts verbatim.
+    """
+    replacements = {
+        'THE READER TEST (': 'THE READER TEST: from visible panels alone, a newcomer can explain the concrete task, obstacle, method steps, why they help and the limits. Also retain every abstract fact, number, setting and qualifier across the teaching sequence, with key numbers shown as evidence. Factual recall is a separate constraint, not proof of human comprehension.',
+        '2. claims (exactly': '2. claims (exactly 1 board panel after the hook): an open list of 2-3 PLAIN READER QUESTIONS about the goal, problem and how it could be helped. No result numbers, unexplained terms or full claims. A concrete question is enough; do not force an extra bet.',
+        '3. problem (': '3. problem (as many panels as the prerequisites need): first teach the necessary beginner foundations and concrete goal, then demonstrate the problem on the example. Explain one new idea per panel before its technical name.',
+        '9. recap (': '9. recap (last board): answer each opening question in order, using what the teaching panels established and keeping the supported scope. Do not repeat the questions as answers or list full claims.',
+        '- A panel that teaches a claim says all of it:': '- A claim can be taught across successive panels, one new concept per panel. Together they retain every part, qualifier and exact number; each carries its claim id.',
+        '- Every panel answers the question': '- Each panel advances one step and explains why it helps. A claim can span successive panels; avoid redundant repetition, but keep necessary foundations and all qualifiers.',
+        '- The recap lists the claims board': '- The recap answers the opening reader questions in order in natural language, preserving scope; lexical overlap is not required.',
+        '- The claims board and the recap only list': '- The opening board asks questions and the recap answers them. The teaching panels must still teach every abstract claim and carry its id.',
+        '- "recap" problems:': '- "recap" problems: answer each opening question using facts already taught, in the same order; never copy the question or restuff full claims.',
+        '- Budget problems:': '- Budget problems: shorten repetition while keeping the current step and its why. Retain details across successive teaching panels, not all within one panel.',
+        '- A claim no panel conveys,': '- A missing claim or number: teach it at the appropriate point after its prerequisites, preserving every qualifier and exact number across successive panels with its claim id.',
+        '- "reader" problems:': '- "reader" problems: a reader who never saw the paper stumbled here; fix the missing prerequisite, overload or causal link at its teaching point, before the dependent term/data. Explain purpose and why, one new idea per panel, with only PAPER TEXT facts. Keep all claim details across successive panels; never solve overload by adding more definitions to this panel.',
+        '- "term" problems:': '- "term" problems: establish the necessary plain concept before its name, in this panel or an earlier suitable teaching panel. Keep the term, all supported details and budgets without overloading a panel.',
+        '- Use ONE running example from': '- Use one running example for supported steps only. Where it cannot demonstrate a step, state the source boundary briefly and teach that step from the paper without inventing a trajectory.',
+        '- When THE RUNNING EXAMPLE is given': '- When THE RUNNING EXAMPLE is given, keep its real parts and source and never switch to another one. Demonstrate only steps the source actually supports; do not turn candidate tokens into a generated sequence.',
+        '- First choice: make the fact visible': '- First choice: revise the existing successive panels about this claim, each teaching one step with its why; retain all facts across them and keep prerequisites ahead of terms/data.',
+        '- Otherwise add a new panel': '- Otherwise add a new panel with "after" (at most one per claim), at the teaching point after its prerequisites. Keep exact results on an evidence board; do not overload the new panel.',
+    }
+    lines = []
+    in_paper = False
+    for line in prompt.splitlines():
+        if line == "PAPER TEXT:":
+            in_paper = True
+        if in_paper:
+            lines.append(line)
+            continue
+        # These instructions otherwise forbid truthful source boundaries in examples/payoffs.
+        if line.startswith('- New panels:'):
+            line = line.split('Add no other panel:', 1)[0] + ' Preserve details across successive teaching panels after prerequisites; never pack a whole claim into one panel. If no space remains, leave overload unresolved for review.'
+        elif line.startswith('- When the running example comes from the paper,'):
+            line = '- For the paper example show only supported steps. Briefly state where its evidence ends; then distinguish aggregate chart results. Never invent a per-example outcome.'
+        elif line.startswith('7. payoff ('):
+            line = '7. payoff (1-2): return to the example and show only what the paper supports. A brief source-boundary statement is allowed; aggregate outcomes do not prove this example was solved.'
+        else:
+            for prefix, replacement in replacements.items():
+                if line.startswith(prefix):
+                    line = replacement
+                    break
+        lines.append(line)
+    # Keep the first line stable for engine routers; instructions precede any source payload.
+    # Quiz routers parse the JSON immediately following the first line. Keep that boundary.
+    at = next((i for i, line in enumerate(lines) if line.startswith("Revise the script so")), 1)
+    lines.insert(at, NOVICE_SEQUENCE)
+    return "\n".join(lines)
+
+
 def story_prompt(brief: dict, claims: list[dict], cast: Cast, panel_range: tuple[int, int], paper: PaperText) -> str:
     lo, hi = panel_range
     r = _roles(cast)
     mentor, student, skeptic = r["mentor"], r["student"], r["skeptic"]
     facts = {k: v for k, v in brief.items() if k not in ("abstract_claims", "abstract", "examples", "brief_check", "factcheck",
                                                          "running_example")}
-    return f"""Turn this research paper into a SHORT MANGA STORY (in English; it is translated later).
+    prompt = f"""Turn this research paper into a SHORT MANGA STORY (in English; it is translated later).
 
 THE READER TEST (this is how the manga is judged): a reader who never saw the paper reads ONLY what is visible in the panels: speech bubbles, narration boxes and the boards drawn in the scenes. Afterwards they must be able to explain everything the paper's ABSTRACT says (the problem, what is new, how it works at the level of the abstract, every result with its number and setting, and the conclusion), and they must have SEEN the key numbers as evidence. Anything that is not visible in a panel does not exist for the reader.
 
@@ -1648,6 +1720,8 @@ WHERE THE ABSTRACT'S NUMBERS APPEAR IN THE PAPER (cite the @cells; copy quotes f
 
 PAPER TEXT:
 {paper.body}"""
+
+    return novice_prompt(prompt) if brief.get("reader_contract") == CONTRACT else prompt
 
 
 def _prompt_board(board):
@@ -1823,7 +1897,7 @@ def fix_prompt(sb: StoryboardV2, cast: Cast, problems: dict[int, list[str]], pap
     split = (f"""- New panels: where a problem asks for a chart panel right after a panel, return that panel (same "n") and ONE new board panel {{"after": n, ...}} with the chart, right after it (beat "proof" for a result; it lists in "claims" the ids it conveys); at most {room} in all. {shorten}"""
              if room > 0 else f"- New panels: none. {shorten}")
     split_out = ' (a new chart panel: {"after": 3, "kind": "board", ...} with the same fields)' if room > 0 else ""
-    return f"""Fix the flagged panels of this manga script. A checking program found the problems listed with each panel.
+    prompt = f"""Fix the flagged panels of this manga script. A checking program found the problems listed with each panel.
 Return a replacement for EVERY flagged panel, with the same "n", that solves all of its problems while keeping its beat, its role in the story and the claims it conveys. Change nothing that is not needed.
 - "evidence" problems: a number is not supported by the paper, or a chart's bars do not come from one table column. Cite the table cell that holds it ("value": "@T2.r9.c1"), or copy the value character for character from the paper and give that bar or table row a "quote" (a verbatim snippet of the PAPER TEXT containing its numbers); if nothing in the paper supports a number, remove it (drop that bar or row, or make the point without the number). Never compute, round or convert.
 - "board" problems: make the board valid for its kind (see the shapes below), or turn the panel into a scene panel ("kind": "scene", "board": null).
@@ -1850,8 +1924,10 @@ SCRIPT (context only; return only the flagged panels):
 FLAGGED PANELS:
 {json.dumps(flagged, ensure_ascii=False)}{paper}"""
 
+    return novice_prompt(prompt) if is_novice(sb) else prompt
 
-CLARITY_KINDS = ("term", "pointer", "mismatch", "order", "number")
+
+CLARITY_KINDS = ("term", "pointer", "mismatch", "order", "number", "prerequisite", "overload", "causal_gap", "example")
 CLARITY_MAX = 12   # problems per script: a fix round rewrites every flagged panel
 
 
@@ -1859,6 +1935,17 @@ def clarity_prompt(sb: StoryboardV2, only: Optional[set] = None) -> str:
     """A newcomer's read of the whole English script in reading order: what a reader who never saw the paper stumbles on
     (the Claude readers' recurring notes: unexplained terms, "this" pointing at nothing, words beside a board about
     something else, points visited out of order, numbers without a unit or a comparison)."""
+    if is_novice(sb):
+        focus = f" Panels {', '.join(map(str, sorted(only)))} are new or rewritten; report findings only on these panels." if only is not None else ""
+        return ("You are a curious reader who never saw this research paper and knows little about its field. "
+                "Read ONLY the visible script in order; do not infer missing facts from prior knowledge. "
+                "Check term, pointer, mismatch, order, number, prerequisite (missing foundations), overload "
+                "(too many new concepts), causal_gap (a step without why it helps), example (illustration or "
+                "aggregate data mistaken for a measured case). Check that the recap answers the opening questions. "
+                "For each finding cite exact visible words in problem, give n, kind and a concrete fix naming "
+                "what is missing, without inventing facts. At most 12 problems, at most 2 per panel. "
+                'Output JSON only: {"problems": [{"n": 3, "kind": "prerequisite", "problem": "...", "fix": "..."}]}. '
+                + focus + "\n\nSCRIPT:\n" + reader_transcript(sb))
     panels = [{"n": p.n, "chapter": p.chapter, "kind": p.kind, "narration": p.narration,
                "bubbles": [f"{b.speaker}: {b.text}" for b in p.dialogue], "board": _drawn_board(p.board)} for p in sb.panels]
     glossary = [{"term": _text(g.get("term")), "plain": _text(g.get("plain"))} for g in _as_list(sb.brief.get("glossary"))
@@ -1942,14 +2029,19 @@ PAPER TEXT:
 {paper_text}"""
 
 
-def fit_prompt_v3(items: list[dict], language: str) -> str:
+def fit_prompt_v3(items: list[dict], language: str, novice: bool = False) -> str:
     unit = _v3_budget(language)["unit"]
-    return f"""Rewrite each text so it fits its limit ("max", in {unit}) while keeping the exact meaning, every number and the tone ({LANG_NAMES.get(language, language)}). No underscores, LaTeX or markdown.
+    prompt = f"""Rewrite each text so it fits its limit ("max", in {unit}) while keeping the exact meaning, every number and the tone ({LANG_NAMES.get(language, language)}). No underscores, LaTeX or markdown.
 A "visual" item is a scene for the picture that mentions people or copies of a cast member: rewrite it as ONE English sentence (scene and action together) that shows the same idea with objects, places, diagrams and the cast only (a person of the paper, such as a driver, a worker or a customer, is played by one member of the item's "cast" wearing the role's prop: "Nezu in a red delivery cap"; only the item's "cast", each once; counts as simple objects such as cards), and states that nobody else is there.
 Return JSON only: {{"items": [{{"id": "...", "text": "rewritten"}}]}}
 
 ITEMS:
 {json.dumps(items, ensure_ascii=False)}"""
+
+    if novice:
+        first, rest = prompt.split("\n", 1)
+        return first + "\nPreserve each question as a question, its answer as an answer, and the plain prerequisite or reason this line teaches. Do not add jargon or facts. If the exact meaning cannot fit, return the original text instead of deleting the explanation.\n" + rest
+    return prompt
 
 
 def _cited(board: dict) -> dict:
@@ -3482,6 +3574,14 @@ VAGUE_LINE_RE = re.compile(r"\b(?:good|better|bad|right|proper|quality|high-qual
 def _vague_list_lines(sb: StoryboardV2) -> dict[int, list[str]]:
     """{n: [...]}: a line of the claims board or the recap that names a claim by a stand-in ("needs good data", "two core
     flaws cause this gap") instead of saying it."""
+    if is_novice(sb):
+        out = {}
+        for p in sb.panels:
+            if p.beat == "claims" and isinstance(p.board, dict) and p.board.get("kind") == "list":
+                items = [str(x).strip() for x in _as_list(p.board.get("items")) if str(x).strip()]
+                if not 2 <= len(items) <= 3 or any(not x.endswith(("?", "？")) for x in items):
+                    out[p.n] = ["opening questions: use 2-3 plain reader questions, not complete claims or result numbers"]
+        return out
     out: dict[int, list[str]] = {}
     for p in sb.panels:
         if p.beat not in ("claims", "recap") or not isinstance(p.board, dict) or p.board.get("kind") != "list":
@@ -3511,6 +3611,8 @@ def _meta_lines(sb: StoryboardV2) -> dict[int, list[str]]:
     """{n: ["meta: ..."]}: a story line that tells the reader what the paper does not show (the fact-check's disclaimers
     were most of them). The limits chapter may say what the authors did not test, and the hook says once that a made-up
     example is an illustration."""
+    if is_novice(sb):
+        return {}  # Brief source boundaries are allowed; factual/evidence lint still applies.
     out: dict[int, list[str]] = {}
     for p in sb.panels:
         if p.beat in ("hook", "limits", "claims", "recap"):
@@ -4049,6 +4151,12 @@ def _recap_mirrors_claims(sb: StoryboardV2) -> dict[int, list[str]]:
     if not claims or not recap:
         return {}
     items = lambda p: [str(x) for x in _as_list(p.board.get("items")) if str(x).strip()]
+    if is_novice(sb):
+        questions = [x for p in claims for x in items(p)]
+        answers = [x for p in recap for x in items(p)]
+        if len(questions) != len(answers) or any(a == q or a.endswith(("?", "？")) for q, a in zip(questions, answers)):
+            return {recap[-1].n: ["recap: answer each opening question in order, in plain words with its supported scope; do not copy the questions"]}
+        return {}  # Semantic answers, prerequisites and limits are assessed by review_story.
     words = lambda t: {_stem(w) for w in _content_tokens(t) if not w[0].isdigit()}
 
     def paired(promised: list, told: list) -> bool:
@@ -4427,6 +4535,11 @@ def lint_v3(sb: StoryboardV2, paper_text: str, report: bool = False) -> dict[int
                 f"claim {cid} is named but not taught: the panels that teach it never say {', '.join(thin[:8])} "
                 f"({claim.get('text', '')}). Say what the claim says, every part and qualifier, in plain words on this panel; "
                 "when it does not fit, cut the words that repeat or decorate, or put a part on this panel's board")
+    if is_novice(sb):
+        for n, hints in out.items():
+            out[n] = [h.replace("in plain words on this panel; when it does not fit, cut the words that repeat or decorate, or put a part on this panel's board",
+                                "in plain words across successive teaching panels after their prerequisites; preserve all details without overloading a panel")
+                        .replace("in this panel's visible text or board and add", "across suitable successive teaching panels after prerequisites and add") for h in hints]
     return out
 
 
@@ -5400,7 +5513,7 @@ class StoryboarderV2:
                      if (only is None or int(str(x["id"]).split(".")[0]) in only) and not kept_original(x["id"])]
             if not items:
                 break
-            prompt = fit_prompt_v3(items, language) if sb.version >= 3 else fit_prompt(items, language)
+            prompt = fit_prompt_v3(items, language, is_novice(sb)) if sb.version >= 3 else fit_prompt(items, language)
             data, usage = await _ask_json(self.fast_engine, "", prompt, thinking=False, temperature=0.2, max_tokens=8000, key="items")
             self._add_usage(usage)
             by_id = {str(x.get("id")): _text(x.get("text")) for x in _as_list(data.get("items")) if isinstance(x, dict) and _text(x.get("text"))}
@@ -5880,6 +5993,7 @@ class StoryboarderV2:
         # means...' line is a picture failing, and a character spent as a glossary")
         brief["picture_symbols"] = []
         brief["abstract"] = abstract
+        brief["reader_contract"] = CONTRACT
         print(f"[StoryboarderV2] abstract of {len(abstract)} chars → {len(brief['abstract_claims'])} claims; "
               f"{len(brief['examples'])} example inputs from the paper")
         return brief
@@ -6906,6 +7020,8 @@ class StoryboarderV2:
             if await self.factcheck(sb, paper, language):
                 await self.fit(sb, language)
         _finish_v3(sb)
+        if is_novice(sb):
+            await review_story(sb, self.check_engine, on_usage=self._add_usage)
         return sb
 
 

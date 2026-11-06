@@ -204,3 +204,32 @@ test("keyboard: Escape on a closed note does nothing and passes through", () => 
   assert.equal(details.open, false);
   assert.equal(seen.focused, 0);
 });
+
+test("reader review: unresolved explanations identify language and panel", () => {
+  const quality = { reader_reviews: { "zh-CN": { status: "needs_revision", problems: [
+    { n: 4, kind: "causal_gap", problem: "没有说明老师为什么要看学生写出的内容。", fix: "Explain the next-step teaching." },
+  ] } } };
+  const notes = helper().qualityNotes(quality);
+  assert.equal(notes.label, "Reading notes");
+  assert.deepEqual(kinds(notes), ["reader_review"]);
+  assert.match(notes.sections[0].items[0], /^zh-CN: Panel 4/);
+  assert.match(render(quality), /没有说明老师/);
+  assert.match(notes.sections[0].explanation, /not a test of what a person understood/);
+});
+
+test("reader review: unavailable or malformed diagnostic never implies comprehension passed", () => {
+  for (const status of ["unassessed", "unexpected"]) {
+    const notes = helper().qualityNotes({ reader_reviews: { "en-US": { status, reason: "private engine detail", problems: null } } });
+    assert.match(notes.sections[0].items[0], /not received a usable reading review/);
+    assert.doesNotMatch(JSON.stringify(notes), /private engine detail|passed/);
+  }
+  assert.equal(helper().qualityNotes({ reader_reviews: [] }), null);
+});
+
+test("reader review: clean AI diagnostic does not publish a comprehension success badge", () => {
+  assert.equal(render({ reader_reviews: { "en-US": { status: "reviewed", problems: [] } } }), "");
+  assert.equal(helper().qualityNotes({ reader_reviews: { "en-US": null } }), null);
+  const combined = helper().qualityNotes({ reader_reviews: { "zh-CN": { status: "unassessed" } }, unchecked_art: [2] });
+  assert.equal(combined.label, "Check details");
+  assert.deepEqual(kinds(combined), ["reader_review", "unchecked_art"]);
+});

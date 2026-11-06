@@ -55,6 +55,44 @@ RESTORE_KEYS = ("status", "image_url", "width", "height", "qa", "strip_index", "
 LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
 
 
+async def _review_final_scripts(writer: StoryboarderV2, scripts: dict[str, StoryboardV2]) -> None:
+    """Review the words that ship, after every translation and English backport has finished."""
+    from services.reader_review import is_novice, review_story, visible_fingerprint
+
+    for language, script in scripts.items():
+        if not is_novice(script):
+            continue
+        previous = script.brief.get("reader_review")
+        if not isinstance(previous, dict):
+            previous = {}
+        if (previous.get("fingerprint") == visible_fingerprint(script)
+                and previous.get("language") == language
+                and previous.get("status") in {"reviewed", "needs_revision", "unassessed"}):
+            continue
+        await review_story(script, writer.check_engine, on_usage=writer._add_usage)
+
+
+def _public_reader_reviews(scripts: dict[str, StoryboardV2]) -> dict:
+    """An old diagnostic cannot vouch for edited words, including after a relayout."""
+    from services.reader_review import is_novice, visible_fingerprint
+
+    reviews = {}
+    for language, script in scripts.items():
+        if not is_novice(script):
+            continue
+        fingerprint = visible_fingerprint(script)
+        previous = script.brief.get("reader_review")
+        if (isinstance(previous, dict) and previous.get("fingerprint") == fingerprint
+                and previous.get("language") == language
+                and previous.get("status") in {"reviewed", "needs_revision", "unassessed"}):
+            reviews[language] = copy.deepcopy(previous)
+        else:
+            reviews[language] = {"status": "unassessed", "language": language, "fingerprint": fingerprint,
+                                 "answers": [], "problems": [],
+                                 "reason": "The final wording has no matching reader review."}
+    return reviews
+
+
 JPEG_MAX_SIDE = 65_000   # libjpeg's hard limit is 65,535 px per side
 CHECK_PROMPT = """You check the lettering of an educational manga about a research paper, written in {language}.
 {situation}
@@ -555,6 +593,7 @@ class JobManager:
             for lang in languages:
                 if lang != "en-US":
                     scripts[lang] = await self._localize(job, writer, english, paper, lang)
+            await _review_final_scripts(writer, {lang: scripts[lang] for lang in languages})
             rt.storyboards = {lang: scripts[lang] for lang in languages}
             storyboard = scripts[s["language"]]
             s["languages"] = languages
@@ -585,6 +624,7 @@ class JobManager:
             "unchecked_idea": [],   # teaching scenes whose picture was published without a verdict on its idea
             # a role whose own model refused a text (content filter) or is not activated, done by the writer's model instead
             "fallbacks": sorted({note for e in (rt.engines.check, rt.engines.translate) for note in getattr(e, "fallbacks", [])}),
+            "reader_reviews": _public_reader_reviews(rt.storyboards or {storyboard.language: storyboard}),
         }
         s["progress"] = {"done": 0, "total": len(storyboard.panels), "percent": 0}
         (job.dir / "storyboard.json").write_text(json.dumps(_clean(storyboard.to_dict()), ensure_ascii=False, indent=1), encoding="utf-8")
@@ -1201,6 +1241,8 @@ class JobManager:
                 copy_recap_marks(english, script, lang)
             else:
                 _honest_recap(script, retitle=False)
+        if any(script.brief.get("reader_contract") == "novice_v1" for script in scripts.values()):
+            s.setdefault("quality", {})["reader_reviews"] = _public_reader_reviews(scripts)
         self._write_atomic(job.dir / "storyboard.json", json.dumps(_clean(rt.storyboard.to_dict()), ensure_ascii=False,
                                                                      indent=1).encode("utf-8"))
         for lang, other in rt.storyboards.items():

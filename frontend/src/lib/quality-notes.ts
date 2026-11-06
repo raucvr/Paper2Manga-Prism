@@ -1,6 +1,6 @@
 import type { JobQuality } from "./api";
 
-export type QualityNoteKind = "fallback" | "skipped" | "unchecked_art" | "unchecked_idea";
+export type QualityNoteKind = "fallback" | "skipped" | "unchecked_art" | "unchecked_idea" | "reader_review";
 
 export interface QualityNoteSection {
   kind: QualityNoteKind;
@@ -34,6 +34,8 @@ function skippedLine(entry: { stage?: string; error?: string } | null | undefine
 
 function overallLabel(sections: QualityNoteSection[]): string {
   const kinds = new Set(sections.map((s) => s.kind));
+  if (kinds.size === 1 && kinds.has("reader_review")) return "Reading notes";
+  if (kinds.has("reader_review")) return "Check details";
   if (kinds.size === 1 && kinds.has("fallback")) return "Backup model used";
   if (kinds.size === 1 && kinds.has("skipped")) return "Some steps incomplete";
   if (!kinds.has("fallback") && !kinds.has("skipped")) return "Some pictures unchecked";
@@ -48,6 +50,30 @@ export function qualityNotes(quality: JobQuality | null | undefined): QualityNot
   const idea = panelList(quality?.unchecked_idea);
 
   const sections: QualityNoteSection[] = [];
+  const reviews = quality?.reader_reviews;
+  if (reviews && typeof reviews === "object" && !Array.isArray(reviews)) {
+    const items: string[] = [];
+    for (const [language, review] of Object.entries(reviews)) {
+      if (!review || typeof review !== "object") continue;
+      if (review.status === "reviewed") continue;
+      const problems = list(review.problems).filter((p) => p && typeof p.problem === "string" && p.problem.trim());
+      const prefix = `${language}: `;
+      if (review.status === "needs_revision" && problems.length) {
+        for (const problem of problems) {
+          const panel = Number.isInteger(problem.n) && problem.n > 0 ? `Panel ${problem.n} — ` : "";
+          items.push(`${prefix}${panel}${problem.problem}`);
+        }
+      } else {
+        items.push(`${prefix}${review.status === "needs_revision" ? "Some explanations still need revision." : "The final wording has not received a usable reading review."}`);
+      }
+    }
+    if (items.length) sections.push({
+      kind: "reader_review",
+      heading: "Explanations to revisit",
+      explanation: "An AI read only the manga's words to look for missing explanations. These notes are not a test of what a person understood.",
+      items,
+    });
+  }
   if (fallbacks.length) {
     sections.push({
       kind: "fallback",

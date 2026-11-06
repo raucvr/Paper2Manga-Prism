@@ -490,6 +490,12 @@ class PaperModel:
         if user.startswith("You are a meticulous fact-checker"):
             self.seen.append("factcheck")
             return {"problems": list(self.factcheck_problems)}
+        if user.startswith("Review novice reader understanding"):
+            from services.reader_review import QUESTIONS
+            self.seen.append("reader_review")
+            # These legacy fixture stories do not teach all novice prerequisites. Do not fake a clean review.
+            return {"answers": [{"question": q, "answer": "cannot tell", "evidence": []} for q in QUESTIONS],
+                    "problems": [], "reason": "Fixture reader cannot establish all six teach-back answers."}
         if user.startswith("You are a curious reader who never saw this research paper"):
             self.seen.append("clarity")
             return {"problems": list(self.clarity_problems)}

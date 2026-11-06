@@ -327,6 +327,15 @@ export interface JobState {
 }
 
 export interface JobQuality {
+  /** Final visible text, by language. An AI diagnostic, never a human comprehension score. */
+  reader_reviews?: Record<string, {
+    status: "reviewed" | "needs_revision" | "unassessed";
+    language: string;
+    fingerprint: string;
+    answers?: { question: string; answer: string; evidence: { n: number; quote: string }[] }[];
+    problems?: { n: number; kind: string; problem: string; fix: string }[];
+    reason?: string;
+  }>;
   /** Checks that could not run, e.g. {stage: "fact-check", error: "TimeoutError: ..."}. */
   skipped?: { stage: string; error: string }[];
   /** Problems the deterministic script checks still saw after the fix rounds. */

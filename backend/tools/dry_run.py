@@ -167,7 +167,8 @@ async def main() -> None:
     from services.lettering import FontSet
     from services.paper_extractor import extract_paper
     from services.pricing import text_usd, usage_usd
-    from services.storyboarder_v2 import StoryboarderV2, panel_range_for
+    from services.storyboarder_v2 import StoryboarderV2, panel_range_for, _finish_v3
+    from services.jobs import _review_final_scripts, _public_reader_reviews
 
     languages = [x.strip() for x in args.languages.split(",") if x.strip()]
     primary, others = "en-US", [x for x in languages if x != "en-US"]
@@ -198,7 +199,7 @@ async def main() -> None:
               "models": {"writer": getattr(engines.text, "model", ""), "checker": getattr(engines.check, "model", ""),
                          "translator": getattr(engines.translate, "model", ""), "fast": getattr(engines.fast_text, "model", "")}}
     report["seconds"]["script_en"] = round(time.time() - t0, 1)
-    report["languages"][primary] = write_language(sb, primary, args.out, fonts, args.mock)
+    scripts = {primary: sb}
     report["lint_left"] = sb.brief.get("lint")
     report["writer_quiz"] = {k: v for k, v in (sb.quiz or {}).items() if k in ("score", "failed_claim_ids", "untested_claim_ids", "rounds", "first_score")}
     report["abstract_claims"] = sb.abstract_claims
@@ -211,9 +212,14 @@ async def main() -> None:
             await writer.fit(translated, lang)
             if await writer.backport(sb, translated, paper):
                 await writer.fit(sb, "en-US")
-                write_language(sb, primary, args.out, fonts, args.mock)   # the English files with the corrected lines
         report["seconds"][f"translate_{lang}"] = round(time.time() - t1, 1)
-        report["languages"][lang] = write_language(translated, lang, args.out, fonts, args.mock)
+        scripts[lang] = translated
+    for script in scripts.values():
+        _finish_v3(script)
+    await _review_final_scripts(writer, scripts)
+    for lang, script in scripts.items():
+        report["languages"][lang] = write_language(script, lang, args.out, fonts, args.mock)
+    report["reader_reviews"] = _public_reader_reviews(scripts)
     report["usage"] = dict(writer.usage)
     report["usage_by_model"] = engines.token_usage()
     report["usd_by_model"] = {m: round(text_usd(m, u["prompt_tokens"], u["completion_tokens"], u["cached_tokens"]), 4)

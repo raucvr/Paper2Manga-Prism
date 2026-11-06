@@ -833,7 +833,7 @@ def revise_prompt(sb: StoryboardV2, failed_claims, cast: Cast, *, paper_text: st
                '"claims": [4]}')
     paper = (f"\n\nPAPER TEXT:\n{paper_text.strip()}" if (paper_text or "").strip() else
              "\n\n(The paper text is not attached: take board quotes only from the claims' quotes or from quotes already on the script's boards.)")
-    return f"""A reader who never saw the paper read only the visible text of this manga (speech bubbles, narration boxes and the boards drawn in the scenes) and then took a quiz on the paper's ABSTRACT. These abstract claims did not come across:
+    prompt = f"""A reader who never saw the paper read only the visible text of this manga (speech bubbles, narration boxes and the boards drawn in the scenes) and then took a quiz on the paper's ABSTRACT. These abstract claims did not come across:
 {json.dumps(list(failed.values()), ensure_ascii=False)}
 
 Revise the script so that every claim above becomes VISIBLE in the panels, with its exact numbers and setting, as part of the story:
@@ -857,3 +857,5 @@ ALL ABSTRACT CLAIMS (ids for "claims")
 
 SCRIPT
 {json.dumps([_script_panel(p) for p in sb.panels], ensure_ascii=False)}{paper}"""
+
+    return _story.novice_prompt(prompt) if _story.is_novice(sb) else prompt

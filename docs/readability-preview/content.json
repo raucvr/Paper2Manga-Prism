@@ -1,0 +1,596 @@
+{
+  "meta": {
+    "title": "OnQ 开头教学预览：把模型压小之后，怎么把它教回来",
+    "language": "zh-CN",
+    "status": "AI 编写并经审阅修改的讲解草稿，非产品流水线生成，非成品漫画。已验证桌面与手机宽度的页面交互；读者理解效果尚未验收。",
+    "authoring": "Claude Opus 5.5 编写，主代理依据原文修订措辞和图示。未运行完整论文生成流水线。",
+    "paper": "Right on Q: Recovering Reasoning under Quantization via Self-Generated Trajectories（Zheng et al.）",
+    "paper_text_source": "samples/20261102_065630_a06e/paper.txt（PDF 抽取文本，行号以此文件为准）",
+    "audit_source": "runs/audit/opus/response.json（只读审阅，提出“先讲直觉再讲术语”的改法）",
+    "scope": "只覆盖开头和核心机制的前一半：为什么要压小模型、量化改变了什么、训练和使用为什么对不上、OnQ 怎样在学生自己的路线上教。论文的第二个问题（双向概率误差与 Dynamic KL）、实验设置、实验结果、对比方法和局限都不在本预览中。",
+    "visible_text_rule": "每格只讲一个新想法，画面上可见的文字（标题、图中文字、台词）大约不超过 60–90 个字符。出处说明默认折叠，不计入。",
+    "root_revision": "纠正每个数必然改变、训练从未见过某条路径、训练与未来推理完全相同等过强表述；示意老师读取分岔后的学生前缀，不编造概率。",
+    "browser_validation": {
+      "engine": "Chrome 156 headless",
+      "viewport_widths": [
+        1440,
+        390,
+        320
+      ],
+      "checks": [
+        "keyboard before/after switch",
+        "disclosures",
+        "no horizontal overflow",
+        "no SVG text outside viewBox",
+        "no page errors"
+      ],
+      "human_comprehension_test": false
+    }
+  },
+  "characters_note": "本脚本没有拟人角色。台词只分“提问”和“讲解”两种声音。文中的“老师”和“学生”是两个模型的角色，不是人，也不是孩子。",
+  "reader_questions": [
+    {
+      "id": "Q1",
+      "text": "为什么要把模型压小？压小会改变什么？"
+    },
+    {
+      "id": "Q2",
+      "text": "旧的补救训练，哪里没对上？"
+    },
+    {
+      "id": "Q3",
+      "text": "OnQ 换了什么做法？作者为什么认为它有帮助？"
+    }
+  ],
+  "before": {
+    "label": "旧版开头（原样引用）",
+    "source_file": "samples/20261102_065630_a06e/storyboard.json",
+    "source_note": "任务里提到的 storyboard.zh-CN.json 在该目录下不存在。这里引用的是同目录的 storyboard.json，它的 language 字段是 \"zh-CN\"，version 是 3。引用范围是 chapters[id=hook] 里的第 1–3 格，也就是旧版的开头。下面只摘出画面上显示的中文文字（标题、旁白、台词、看板），逐字照搬。说话人用原文件里的 id。英文的 visual 画面描述没有收录。",
+    "panels": [
+      {
+        "n": 1,
+        "title": "卡住的模型",
+        "narration": "这是论文里校准过的Qwen3-1.7B 2比特模型。",
+        "dialogue": [
+          {
+            "speaker": "kumo",
+            "text": "这个2比特模型怎么不行？它最看好“some”，老师要“a”。"
+          },
+          {
+            "speaker": "kumo",
+            "text": "旧的QAT用固定的全精度回答来训练它。"
+          }
+        ]
+      },
+      {
+        "n": 2,
+        "title": "打赌",
+        "narration": "作者发现了两个阻碍性能提升的核心问题。",
+        "dialogue": [
+          {
+            "speaker": "papi",
+            "text": "这正是这篇论文要解决的问题。"
+          },
+          {
+            "speaker": "nezu",
+            "text": "小修小补而已。我赌一个浆果挞，它修不好长任务。"
+          }
+        ]
+      },
+      {
+        "n": 3,
+        "title": "论文的主张",
+        "narration": "首先是论文自己的总结。",
+        "dialogue": [
+          {
+            "speaker": "kumo",
+            "text": "我们来验证一下这些说法是否成立。"
+          }
+        ],
+        "board": {
+          "title": "论文的主张",
+          "subtitle": "论文自己的总结",
+          "items": [
+            "QAT旨在恢复压缩后极低位大模型的推理能力",
+            "旧QAT通常只用固定的现成答案训练",
+            "旧模型长任务失败，token耗尽",
+            "两大缺陷：错配+双向误差",
+            "OnQ：提出的极低位恢复流程",
+            "OnQ在8B 2比特平均分上比BitDistiller高10.26分"
+          ]
+        }
+      }
+    ],
+    "observed_problems": [
+      "第 1 格的头两句话里同时出现了“2比特”“QAT”“全精度”“老师”和具体词元，可这些概念一个都还没讲过。",
+      "第 3 格在讲机制之前就放出了一整张主张清单和一个结果数字。",
+      "旧版没有说明量化是什么，也没有说明老师和学生是谁。"
+    ]
+  },
+  "after": {
+    "label": "新版开头（编辑示范稿）",
+    "panels": [
+      {
+        "n": 1,
+        "idea": "模型基于已经写出的内容，逐段生成回答",
+        "title": "一道要写很久的题",
+        "diagram": {
+          "kind": "svg",
+          "shows": "题目 → 片段一 → 片段二 → … → 写完。每次生成一个文字片段。",
+          "provenance_label": "示意"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "模型解一道复杂数学题，可能要写很长的步骤。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "它每次接着已写内容，生成下一个文字片段。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "论文分析的是 MATH-500 数学题，其中一些题会让原模型写出很长的回答",
+            "paper_lines": "L36-L39"
+          },
+          {
+            "claim": "学生通过自己的前向计算采样回答；每一步都以“题目＋已写出的部分”为条件",
+            "paper_lines": "L193-L196"
+          },
+          {
+            "claim": "回答越长，学生越依赖自己已经写出的内容",
+            "paper_lines": "L40-L42"
+          }
+        ],
+        "boundary": "文字片段是 token 的口语解释；可能是词的一部分或标点，不等于一整步推理。"
+      },
+      {
+        "n": 2,
+        "idea": "为什么想把模型变小：占用内存更少，部署更实际",
+        "title": "为什么想把它变小",
+        "diagram": {
+          "kind": "svg",
+          "shows": "一个大方块（原模型）经过“压小”箭头，变成一个小方块（压小后）。图下注明“占用内存更少”。",
+          "provenance_label": "示意，大小不按比例"
+        },
+        "lines": [
+          {
+            "speaker": "提问",
+            "text": "为什么要把模型变小？"
+          },
+          {
+            "speaker": "讲解",
+            "text": "大模型很占内存。压小后，部署更方便。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "低位量化降低大模型的内存占用，让部署更实际",
+            "paper_lines": "L27-L28"
+          }
+        ],
+        "boundary": "不说压小后就一定能装进某台具体设备，论文的开头没有给出这种量化结论。没有画任何设备。"
+      },
+      {
+        "n": 3,
+        "idea": "把权重存为较少的允许档位，节省存储，但可能改变计算",
+        "title": "用更粗的刻度存数字",
+        "diagram": {
+          "kind": "svg",
+          "shows": "上面一条线上散落着几个“原来的数”，下面一条线只有若干等距档位。每个数有一根箭头落到最近的档位，其中一处标出“数值可能改变”。",
+          "provenance_label": "示意，非论文数据；档位数量只是示意，不代表论文设置"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "用较少几档，来保存模型里的数字。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "这叫量化。存着更省空间，但有些数会变。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "公式 1：权重先除以尺度、四舍五入、加上零点，再截到 [0, 2^N−1]；前向计算使用还原后的权重",
+            "paper_lines": "L133-L140"
+          },
+          {
+            "claim": "同一组权重共用尺度和零点",
+            "paper_lines": "L138-L139"
+          }
+        ],
+        "boundary": "有些数可能本就在档位上，不是每个数都会变。舍入或截断的误差也不保证很小。档位数量仅为示意。"
+      },
+      {
+        "n": 4,
+        "idea": "压小会伤到推理，所以要再训练；“老师”和“学生”是两个模型的角色",
+        "title": "老师和学生，是两个模型",
+        "diagram": {
+          "kind": "svg",
+          "shows": "左卡片“老师 = 压小前的原模型，训练中不改动”；右卡片“学生 = 压小后的模型，要再训练”。一根箭头写着“学生向老师看齐”。",
+          "provenance_label": "示意"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "压小可能伤到推理，所以还要继续训练。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "让压小后的学生，向原来的老师模型学习。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "已有研究报告，低精度推理模型的准确率明显下降，生成效率也变低（这是论文对前人工作的引述）",
+            "paper_lines": "L28-L30"
+          },
+          {
+            "claim": "QAT 用量化后的前向计算调整模型参数，通常由原始全精度模型来监督",
+            "paper_lines": "L30-L33"
+          },
+          {
+            "claim": "老师是冻结（不更新）的全精度模型",
+            "paper_lines": "L74-L75"
+          },
+          {
+            "claim": "每个学生都由它自己对应的原始 BF16 模型来监督",
+            "paper_lines": "L243-L244"
+          }
+        ],
+        "boundary": "“伤到推理”来自前人工作，不是本文在这一格里的测量。“看齐”指学生向老师的下一个词概率分布靠拢，不表示老师掌握事实真相。"
+      },
+      {
+        "n": 5,
+        "idea": "旧做法沿固定参考回答训练，学习老师对后续文字的偏好",
+        "title": "旧做法：沿着备好的答案练",
+        "diagram": {
+          "kind": "svg",
+          "shows": "灰色固定路线的词块“… not the case . So …”，每个词块下都有一个橙色“师”标记（图例：师＝老师给出下一个词的倾向）。",
+          "provenance_label": "词序列取自论文图 2；“师”标记和布局为示意",
+          "exact_sequence": "… not the case . So …"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "旧做法：沿着事先备好的答案训练。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "每一步，都学老师更倾向接哪些文字。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "现有方法通常在固定回答序列上用原始全精度模型监督量化学生",
+            "paper_lines": "L8"
+          },
+          {
+            "claim": "这些蒸馏方法通常在固定回答序列上训练；效果取决于训练前缀能否覆盖学生推理时遇到的前缀",
+            "paper_lines": "L33-L35"
+          },
+          {
+            "claim": "固定回答蒸馏只监督参考前缀",
+            "paper_lines": "L40"
+          },
+          {
+            "claim": "图 2 中的固定路线（fixed trajectory）：“… not the case .  So …”",
+            "paper_lines": "L102-L103"
+          },
+          {
+            "claim": "LLM-QAT、BitDistiller、ReasoningQAT 都在固定训练序列上计算老师监督",
+            "paper_lines": "L95-L96"
+          }
+        ],
+        "boundary": "不说固定答案是老师写的。基线所用的“问题–回答”对来自数据集（L489-L490）。不说固定答案对或错。老师给的是概率分布，不是对错判定。"
+      },
+      {
+        "n": 6,
+        "idea": "症状：这样补救后，长题上仍常常写到生成长度上限还停不下来",
+        "title": "补救后，仍可能写不完",
+        "diagram": {
+          "kind": "svg",
+          "shows": "两条横线：“原模型”在虚线“生成长度上限”之前停住；“补救后的学生”一直写到上限还没停。",
+          "provenance_label": "示意，非论文数据"
+        },
+        "lines": [
+          {
+            "speaker": "提问",
+            "text": "这样补救，问题就解决了吗？"
+          },
+          {
+            "speaker": "讲解",
+            "text": "论文测试的长题中，它常写到长度上限仍没结束。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "QAT 之后的低位模型在长推理任务上仍然吃力，常常在原模型够用的 token 预算内停不下来",
+            "paper_lines": "L9-L11"
+          },
+          {
+            "claim": "Qwen3-1.7B 2 比特，MATH-500：对原模型会写得很长的那些题，QAT 基线常常写到 token 上限，原模型则能在同样预算内结束（图 1b）",
+            "paper_lines": "L36-L40"
+          }
+        ],
+        "boundary": "示意图不是图 1 的数据。这里不给百分比，也不说具体哪道题。这里的“它”指用旧做法补救过的低位学生。"
+      },
+      {
+        "n": 7,
+        "idea": "学生自己的续写，可能不在固定训练回答覆盖的路线上",
+        "title": "自己写时，可能换一条路",
+        "diagram": {
+          "kind": "svg",
+          "shows": "共同的已写部分“… not the case .”之后分成两行：灰色“So …”（旧训练练的路）；蓝色“Wait , the problem says …”（学生自己写的路：未必覆盖）。",
+          "provenance_label": "两条词序列都原样取自论文图 2",
+          "exact_sequences": {
+            "fixed_trajectory": "… not the case . So …",
+            "quantized_continuation": "… not the case . Wait , the problem says …"
+          }
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "学生自己写时，可能接上 Wait（等一下）。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "接下来的内容变了，旧训练未必覆盖。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "图 2：固定路线“… not the case .  So …”和量化模型的续写“Wait , the problem says”／“… not the case . Wait , the problem says …”",
+            "paper_lines": "L102-L107"
+          },
+          {
+            "claim": "量化改变了学生的生成方式；固定回答蒸馏只监督参考前缀",
+            "paper_lines": "L40-L41"
+          },
+          {
+            "claim": "固定回答监督使训练前缀和学生生成时遇到的前缀不一致",
+            "paper_lines": "L11-L13"
+          }
+        ],
+        "boundary": "论文没有说 Wait 是错误，也没有说这次分岔导致了截断或答错。这里只用它说明“路线不同”。"
+      },
+      {
+        "n": 8,
+        "idea": "错配会随回答变长而变大",
+        "title": "长回答，更容易偏离",
+        "diagram": {
+          "kind": "svg",
+          "shows": "两条线从同一点出发：灰色直线是固定路线，蓝色曲线是学生的路，越往右分得越开。两处竖虚线分别标“差得少”和“差得多”，横轴写“写得越长 →”。",
+          "provenance_label": "示意，非论文数据"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "每次续写，都接着自己已经写出的内容。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "作者观察到：回答越长，这种偏离越明显。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "回答越长，学生越依赖自己的输出，上下文离参考前缀越远",
+            "paper_lines": "L40-L42"
+          },
+          {
+            "claim": "这种轨迹偏离随回答变长而增大",
+            "paper_lines": "L12-L13"
+          }
+        ],
+        "boundary": "曲线形状是示意，论文没有给出这种距离的度量曲线。术语“轨迹偏离”放在术语表。"
+      },
+      {
+        "n": 9,
+        "idea": "OnQ 的做法：学生先自己写，老师在学生写出的每一步上给出下一个词的倾向，学生调整后再写新的一轮",
+        "title": "OnQ：先让学生自己写",
+        "diagram": {
+          "kind": "svg",
+          "shows": "学生自己生成图 2 的续写。老师读到学生已写的 … Wait , the problem，在这一前缀上给出下一片段的偏好。学生调整，再生成新一轮回答。",
+          "provenance_label": "词序列取自图 2；指导流程为示意，不展示概率数值",
+          "exact_sequence": "… not the case . Wait , the problem says …"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "OnQ 让学生先自己写，再让老师看这份回答。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "老师逐步给出下一段文字的偏好；学生学习后，再写一轮。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "从块级校准出发，量化学生生成回答，并在自己的前缀上接受全精度老师的监督",
+            "paper_lines": "L17-L18"
+          },
+          {
+            "claim": "学生通过量化前向计算采样回答，老师在同样的前缀上给出下一个 token 的分布",
+            "paper_lines": "L125-L129"
+          },
+          {
+            "claim": "老师在每个学生生成的前缀上给出分布，包括含有学生早先错误的前缀",
+            "paper_lines": "L193-L197"
+          },
+          {
+            "claim": "更新后的学生再生成新的回答，让老师的监督始终对准学生当前会走到的前缀",
+            "paper_lines": "L226-L230"
+          },
+          {
+            "claim": "图 2 左侧“on-policy (ours)”：在量化前缀上给出全精度目标",
+            "paper_lines": "L106-L108"
+          }
+        ],
+        "boundary": "老师给的是它自己的下一个 token 分布（蒸馏），不是事实纠错。这一格不讲损失函数，也不讲 Dynamic KL。"
+      },
+      {
+        "n": 10,
+        "idea": "作者为什么认为这有帮助（有边界的因果说法）",
+        "title": "为什么这样教",
+        "diagram": {
+          "kind": "svg",
+          "shows": "旧方法用固定参考回答训练，OnQ 用学生本轮自己生成的回答训练；循环符号表示更新后重新生成。",
+          "provenance_label": "示意"
+        },
+        "lines": [
+          {
+            "speaker": "讲解",
+            "text": "练习材料，来自学生这一轮自己写出的内容。"
+          },
+          {
+            "speaker": "讲解",
+            "text": "这样更贴近它会遇到的情况；是否有效，还要看实验。"
+          }
+        ],
+        "source_notes": [
+          {
+            "claim": "轨迹偏离促使作者让老师在学生自己的轨迹上监督",
+            "paper_lines": "L42-L43"
+          },
+          {
+            "claim": "这种同策略监督用来应对轨迹偏离（原文：addresses trajectory divergence）",
+            "paper_lines": "L128-L129"
+          },
+          {
+            "claim": "相关领域认为，在学习者自己的输出上训练可以缓解暴露偏差",
+            "paper_lines": "L113-L116"
+          }
+        ],
+        "boundary": "本轮生成的前缀成为训练材料，不保证覆盖未来全部推理场景。完整 OnQ 还包含 Dynamic KL，本预览未展开，也不承诺错误消失。"
+      }
+    ]
+  },
+  "recap": {
+    "title": "回到开头的三个问题",
+    "answers": [
+      {
+        "question": "Q1",
+        "text": "压小是为了少占内存。量化用更少档位存数字，节省空间，也可能改变模型的计算。",
+        "panels": [
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "question": "Q2",
+        "text": "旧方法沿着固定答案训练；学生自己写的内容可能不同，长回答中的偏离更明显。",
+        "panels": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      {
+        "question": "Q3",
+        "text": "让学生先写，老师针对它已写出的内容指导下一步。训练更贴近学生本轮的行为；效果和边界仍要看实验。",
+        "panels": [
+          9,
+          10
+        ]
+      }
+    ]
+  },
+  "glossary": [
+    {
+      "term": "参数 / 权重",
+      "en": "parameters / weights",
+      "plain": "模型内部决定输出的大量数字。量化处理的就是这些权重。",
+      "paper_lines": "L133-L140"
+    },
+    {
+      "term": "量化",
+      "en": "quantization",
+      "plain": "把每个权重四舍五入成一个 N 比特整数编码，取值范围 0 到 2^N−1，计算时再按尺度和零点还原。",
+      "paper_lines": "L133-L138"
+    },
+    {
+      "term": "2 比特 / 3 比特",
+      "en": "W2 / W3",
+      "plain": "论文研究的两种权重位宽。位数越少，可用的档位越少。",
+      "paper_lines": "L239-L240"
+    },
+    {
+      "term": "全精度模型",
+      "en": "full-precision model",
+      "plain": "没有量化的原模型。本文用它当老师，训练中保持冻结。",
+      "paper_lines": "L74-L75"
+    },
+    {
+      "term": "量化感知训练（QAT）",
+      "en": "quantization-aware training",
+      "plain": "量化之后，用量化后的前向计算继续训练参数，通常由全精度模型来监督。",
+      "paper_lines": "L8, L30-L33"
+    },
+    {
+      "term": "蒸馏",
+      "en": "distillation",
+      "plain": "让学生的下一个 token 概率分布向老师的分布靠拢。它学的是老师的倾向，不是由外部判定的对错。",
+      "paper_lines": "L32-L33, L195"
+    },
+    {
+      "term": "token / 词元",
+      "en": "token",
+      "plain": "模型一次写出的最小单位，可能是一个词、词的一部分或一个标点。正文口语化地称为“文字片段”。",
+      "paper_lines": "L102-L107"
+    },
+    {
+      "term": "token 预算 / 长度上限",
+      "en": "token budget / token limit",
+      "plain": "允许一个回答写到的最大长度。写到上限还没结束，回答就会被截断。",
+      "paper_lines": "L9-L11, L38-L39"
+    },
+    {
+      "term": "前缀",
+      "en": "prefix",
+      "plain": "到某一步为止已经写出的内容（包括题目）。下一个 token 是以它为条件预测的。",
+      "paper_lines": "L195-L196"
+    },
+    {
+      "term": "固定回答监督",
+      "en": "fixed-response supervision",
+      "plain": "只在事先备好的固定回答序列上计算老师监督。",
+      "paper_lines": "L8, L33, L40"
+    },
+    {
+      "term": "轨迹偏离",
+      "en": "trajectory divergence",
+      "plain": "训练时的前缀和学生自己生成时遇到的前缀不一致，而且回答越长偏得越远。",
+      "paper_lines": "L11-L13, L40-L42"
+    },
+    {
+      "term": "同策略蒸馏（OPD）",
+      "en": "on-policy distillation",
+      "plain": "老师监督的是学生自己生成的前缀，学生当前的行为本身成为训练分布的一部分。",
+      "paper_lines": "L16-L18, L115-L116, L125-L129"
+    },
+    {
+      "term": "块级校准",
+      "en": "block-wise calibration",
+      "plain": "OnQ 的起点：逐个 Transformer 块，让量化块的输出接近全精度块的输出。",
+      "paper_lines": "L141-L143, L185-L191"
+    },
+    {
+      "term": "Dynamic KL（本预览未展开）",
+      "en": "candidate-wise Dynamic KL",
+      "plain": "OnQ 的第二部分。它处理另一个问题：学生在同一个前缀上，对一些候选词估低、对另一些估高。本预览没有讲这一部分。",
+      "paper_lines": "L14-L20, L198-L215"
+    }
+  ],
+  "not_covered": [
+    "第二个问题：双向概率误差（distributional misalignment）",
+    "Dynamic KL 目标函数，以及前向 KL 和反向 KL 的加权方式",
+    "回答长度上限的分阶段安排、训练数据和超参数",
+    "全部实验结果和数字（包括基准平均分、截断率、回答长度）",
+    "与各基线方法的比较、消融实验和局限讨论"
+  ]
+}

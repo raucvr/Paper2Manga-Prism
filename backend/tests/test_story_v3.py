@@ -336,7 +336,7 @@ async def test_build_v3_produces_a_v3_storyboard_with_boards_claims_chapters_and
     # fact-check reads the script after them; no scene has a picture idea to look at (round 23: scenes tell, boards explain);
     # the recap evidence reads the final script
     assert model.seen == ["brief_v3", "briefcheck", "story", "story", "diagram", "clarity", "boardcheck", "factcheck", "quiz", "reader",
-                          "grade", "grade", "grade", "recap_evidence"]
+                          "grade", "grade", "grade", "recap_evidence", "reader_review"]
     assert "A FIRST DRAFT OF THIS STORY HAD ONLY 9 PANELS" in [p for p in engine.prompts if "SHORT MANGA STORY" in p][1]
     assert all(p.shows == "" for p in sb.panels) and sb.panels[2].board["kind"] == "diagram" and sb.panels[2].board["elements"]
     assert list(dict.fromkeys(stages)) == ["analyzing", "storyboarding"]
@@ -359,6 +359,10 @@ async def test_build_v3_produces_a_v3_storyboard_with_boards_claims_chapters_and
     assert [(t["after"], t["found"]) for t in sb.brief["lint_trail"]] == [
         ("write", {}), ("fix", {}), ("pictures", {}), ("check", {}), ("quiz", {}), ("pictures again", {}), ("last check", {}),
         ("scrub", {})]
+    from services.reader_review import visible_fingerprint
+    assert sb.brief["reader_contract"] == "novice_v1"
+    assert sb.brief["reader_review"]["status"] == "needs_revision"
+    assert sb.brief["reader_review"]["fingerprint"] == visible_fingerprint(sb)
     saved = sb.to_dict()
     assert (saved["version"], saved["running_example"], saved["quiz"]["score"]) == (3, sb.running_example, 1.0)
     assert saved["panels"][5]["kind"] == "board" and saved["panels"][5]["claims"] == [3]
@@ -415,7 +419,10 @@ async def test_build_v3_translates_board_strings_and_keeps_numbers_and_quotes():
     stages = []
     sb = await StoryboarderV2(engine).build_v3(v3_paper(), make_cast(), "zh-CN", (16, 32), on_stage=lambda s, m: stages.append(s))
 
-    assert model.seen[-2:] == ["translate", "factcheck"] and list(dict.fromkeys(stages))[-1] == "translating"
+    assert model.seen[-3:] == ["translate", "factcheck", "reader_review"] and list(dict.fromkeys(stages))[-1] == "translating"
+    from services.reader_review import visible_fingerprint
+    assert sb.brief["reader_review"]["language"] == "zh-CN"
+    assert sb.brief["reader_review"]["fingerprint"] == visible_fingerprint(sb)
     assert sb.language == "zh-CN" and sb.version == 3
     table, recap = sb.panels[5].board, sb.panels[8].board
     assert table["title"] == "板书 2014" and table["columns"] == ["板书", "板书"]
@@ -486,7 +493,7 @@ async def test_build_v3_sends_what_a_newcomer_stumbles_on_to_a_fix_round():
     assert model.seen.index("fix") < model.seen.index("factcheck")   # the fact-check reads the reader's rewrites
     assert [(c["n"], c["kind"]) for c in sb.brief["clarity"]] == [(2, "term"), (2, "pointer"), (1, "clarity")]
     clarity = prompt_of(engine, "You are a curious reader who never saw this research paper")
-    assert '"bubbles": ["papi:' in clarity and "GLOSSARY" in clarity and "PAPER TEXT" not in clarity   # the script alone
+    assert "papi:" in clarity and "GLOSSARY" not in clarity and "PAPER TEXT" not in clarity   # the script alone
 
 
 async def test_build_v3_sends_boards_that_do_not_back_their_words_to_the_same_fix_round():
