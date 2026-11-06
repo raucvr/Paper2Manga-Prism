@@ -1,0 +1,435 @@
+[
+  {
+    "n": 1,
+    "issues": [
+      "发光大脑箱把模型拟成生物脑；硬塞小背包容易把量化误画成缩小模型本体。需要明确容量困境且不提前画出成功结果。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. At a small worktable, kumo tries to slide a thick bundle of plain cards into an already full shallow storage drawer and pauses when it will not close. Papi crouches beside the drawer, stopping the push with one open paw and inspecting the available space. Nezu steadies the drawer from the other side and watches the fit critically. The props are an illustrative storage-capacity problem, with no cards removed, no magically shrunken model, and no claimed outcome. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi",
+      "nezu"
+    ],
+    "shows": "At a small worktable, kumo tries to slide a thick bundle of plain cards into an already full shallow storage drawer and pauses when it will not close. Papi crouches beside the drawer, stopping the push with one open paw and inspecting the available space. Nezu steadies the drawer from the other side and watches the fit critically. The props are an illustrative storage-capacity problem, with no cards removed, no magically shrunken model, and no claimed outcome."
+  },
+  {
+    "n": 2,
+    "issues": [
+      "原图另画两列量化珠子，会重复代码比较图；nezu有对白但visual未安排可见动作。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Below the board, papi holds both paws at the same width to stress an unchanged amount, kumo leans forward with paws close together as if asking about finer increments, and nezu examines the gesture with one paw raised. Keep their actions in the lower strip without any bead rows or precision diagrams. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo",
+      "nezu"
+    ]
+  },
+  {
+    "n": 3,
+    "issues": [
+      "endlessly明确暗示无限循环；短且完成的对照卷轴将群体观察变成未提供的个案长短数据。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Kumo feeds a single blank paper strip across a desk until it meets a plain physical end-stop; its paw remains poised to continue. Papi gently holds the feeder still at that boundary while nezu points out that the action has stopped before kumo is ready. Show one finite illustrative strip and a visible stopping boundary, with no comparison scroll, no outcome marks and no endless paper. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi",
+      "nezu"
+    ],
+    "shows": "Kumo feeds a single blank paper strip across a desk until it meets a plain physical end-stop; its paw remains poised to continue. Papi gently holds the feeder still at that boundary while nezu points out that the action has stopped before kumo is ready. Show one finite illustrative strip and a visible stopping boundary, with no comparison scroll, no outcome marks and no endless paper."
+  },
+  {
+    "n": 4,
+    "issues": [
+      "characters只有kumo，visual却新增papi与nezu；现场写字会污染留白板并重复代码提问清单。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Kumo alone stands at the lower-left corner of the board, holding a capped marker away from its surface and turning toward the reader with an eager questioning gesture. No writing or checkmarks are made. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo"
+    ]
+  },
+  {
+    "n": 5,
+    "issues": [
+      "地面路径重复代码流程，还占用角色表演空间；不必画无限延长的额外流程。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. At the lower edge of the board, papi slides one plain tile toward kumo on a narrow desk, demonstrating one small next step. Kumo reaches to receive that one tile. Use only this small handoff, not a long path or another sequence diagram. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo"
+    ]
+  },
+  {
+    "n": 6,
+    "issues": [
+      "有papi对白但visual缺少papi；走路回望偏向路径导航，宜用已经产生的内容与下一片段的关系。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. On a tabletop, an unprinted broad starting card lies beside a short, already assembled row of blank tiles. Papi sweeps one paw over the starting card and the existing row together. Kumo holds one new tile just beyond the row's end, pausing before placing it; nezu points to the already assembled row rather than the new tile. All three look at this shared context. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo",
+      "nezu"
+    ],
+    "shows": "On a tabletop, an unprinted broad starting card lies beside a short, already assembled row of blank tiles. Papi sweeps one paw over the starting card and the existing row together. Kumo holds one new tile just beyond the row's end, pausing before placing it; nezu points to the already assembled row rather than the new tile. All three look at this shared context."
+  },
+  {
+    "n": 7,
+    "issues": [
+      "大小不等卡片被抽取会暗示按物理卡面积抽样，既无来源也易把候选大小与概率混为一谈。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Papi spreads a small fan of equal-size plain candidate cards on a table; kumo pauses with a paw above one card, and nezu holds up an open paw to emphasize that other alternatives remain. Show the moment of considering a next candidate, not a literal random lottery mechanism. No varying card areas, repeated cards, probability numerals or bar heights. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi",
+      "nezu"
+    ],
+    "shows": "Papi spreads a small fan of equal-size plain candidate cards on a table; kumo pauses with a paw above one card, and nezu holds up an open paw to emphasize that other alternatives remain. Show the moment of considering a next candidate, not a literal random lottery mechanism. No varying card areas, repeated cards, probability numerals or bar heights."
+  },
+  {
+    "n": 8,
+    "issues": [
+      "visual新增未列入characters的nezu；两套模型和刻度重复比较板。保留同尺寸观念但由正文和代码板解释。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi crouches at the lower-left of the board, one paw held still while the other makes a small careful adjustment gesture. Kumo at lower-right watches the moving paw and tilts its head toward the still one. Show only papi and kumo, with no teacher/student statues, model replicas or precision diagrams. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo"
+    ]
+  },
+  {
+    "n": 9,
+    "issues": [
+      "新增student figure；被推上轨道暗示学生被迫复制整段固定答案，并重复流程板。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi at the lower-left holds a closed plain booklet fixed on the desk, without turning its pages. Nezu leans in from lower-right and points questioningly at that same booklet. The booklet is only a modest prop for prepared material; no track, forced passenger or extra student. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "papi"
+    ]
+  },
+  {
+    "n": 10,
+    "issues": [
+      "分叉路重复板上已给的实例且缺少发言者papi；signpost容易生成文字。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi and kumo sit below the board. Papi's gaze follows one comparison side while kumo turns toward the other, holding two paws slightly apart in a discovering gesture. Their contrasting eyelines direct attention to the code comparison without drawing another fork, signpost or path. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo"
+    ]
+  },
+  {
+    "n": 11,
+    "issues": [
+      "一条亮路一条黑路把未覆盖前缀暗示成正确/危险路径，强化未证实的失败。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. On a uniformly lit desk, a simple unprinted sample row and a second row begin with matching tiles but end with different-shaped tiles. Kumo holds the different final tile thoughtfully, not fearfully. Nezu raises a questioning paw; papi holds an open reassuring paw between the two rows without choosing a winner. No dark path, warning signs or correct/incorrect symbols; this is an illustrative divergence only. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "papi",
+      "kumo"
+    ],
+    "shows": "On a uniformly lit desk, a simple unprinted sample row and a second row begin with matching tiles but end with different-shaped tiles. Kumo holds the different final tile thoughtfully, not fearfully. Nezu raises a questioning paw; papi holds an open reassuring paw between the two rows without choosing a winner. No dark path, warning signs or correct/incorrect symbols; this is an illustrative divergence only."
+  },
+  {
+    "n": 12,
+    "issues": [
+      "越分越远的几何距离可误读为测量曲线或必然单调增长，宜明确示意且不画定量分叉。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Papi holds one short prepared strip of blank tiles beside a longer loose strip whose later tile sequence differs. Nezu traces only the later differing section with a fingertip, asking for evidence. Keep the strips on a desk with no horizon, calibrated gap, distance ruler or numerical trend; they illustrate different continuations rather than measured divergence. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "nezu"
+    ],
+    "shows": "Papi holds one short prepared strip of blank tiles beside a longer loose strip whose later tile sequence differs. Nezu traces only the later differing section with a fingertip, asking for evidence. Keep the strips on a desk with no horizon, calibrated gap, distance ruler or numerical trend; they illustrate different continuations rather than measured divergence."
+  },
+  {
+    "n": 13,
+    "issues": [
+      "新增两位judges/teacher/student；榜牌再画一遍排序并将模型拟成人。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi leans in from the lower-left and gestures toward one half of the blank board; nezu leans in from the lower-right and turns its gaze toward the opposite half with a skeptical raised paw. No judges, placards, ranked props or model avatars. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "nezu"
+    ]
+  },
+  {
+    "n": 14,
+    "issues": [
+      "一架天平同时向两边倾斜不可能；student figure是额外角色，雾云还易与kumo身份混淆。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Papi and kumo examine a small tabletop demonstration with two separate plain vertical sliders, each beside its own fixed reference notch. One movable slider sits below its own reference and the other above its own reference. Papi indicates the two different directions while kumo looks between them. Use unlabeled qualitative positions only, no calibrated heights or numbers; no impossible balance, added student or fog-cloud character. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo"
+    ],
+    "shows": "Papi and kumo examine a small tabletop demonstration with two separate plain vertical sliders, each beside its own fixed reference notch. One movable slider sits below its own reference and the other above its own reference. Papi indicates the two different directions while kumo looks between them. Use unlabeled qualitative positions only, no calibrated heights or numbers; no impossible balance, added student or fog-cloud character."
+  },
+  {
+    "n": 15,
+    "issues": [
+      "分开两张便签的动作支持不贸然连因果；需防便签生成字迹，并让kumo的因果连线企图可见。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Papi pins two blank notes apart on a corkboard. Kumo holds a loose cord as if about to connect them, while nezu gently stops that paw before the cord touches either note. The cord remains slack and unattached, showing that a causal link is not established. The notes contain no text, symbols or charts. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "nezu",
+      "papi"
+    ],
+    "shows": "Papi pins two blank notes apart on a corkboard. Kumo holds a loose cord as if about to connect them, while nezu gently stops that paw before the cord touches either note. The cord remains slack and unattached, showing that a causal link is not established. The notes contain no text, symbols or charts."
+  },
+  {
+    "n": 16,
+    "issues": [
+      "visual增加未列入的kumo/nezu；三站地图重复代码流程。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi alone stands below the board, leaning forward to introduce the first step with a low sweeping paw gesture that stays outside the blank display. No map, stations, arrows or other characters. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi"
+    ]
+  },
+  {
+    "n": 17,
+    "issues": [
+      "kumo拿下一块、搭高积木可误教校准增加/替换模型层；须是已有结构逐块调整。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Two equal-height, already assembled block towers stand side by side. Papi carefully turns a small knob on one existing block of the nearer tower while comparing that level with the corresponding level of the untouched reference tower. Kumo braces the nearer tower so it stays intact. No blocks are added, removed or replaced; no exact match or completed recovery is shown. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo"
+    ],
+    "shows": "Two equal-height, already assembled block towers stand side by side. Papi carefully turns a small knob on one existing block of the nearer tower while comparing that level with the corresponding level of the untouched reference tower. Kumo braces the nearer tower so it stays intact. No blocks are added, removed or replaced; no exact match or completed recovery is shown."
+  },
+  {
+    "n": 18,
+    "issues": [
+      "characters只有papi，visual却画Kumo-like student与teacher两个额外角色且漏papi；把模型身份误画成教授与学生，卷轴还重复代码流程。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Only papi appears, crouched below the lower-left board corner and leaning forward with one paw guiding the viewer's attention from the upper part of the board toward the next step lower down. The paw stays outside the display surface. The body makes a clear presenting motion; no kumo-like student, professor, teacher avatar, scroll, probability cards or duplicate workflow. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi"
+    ]
+  },
+  {
+    "n": 19,
+    "issues": [
+      "teacher figure是额外角色；指离草稿可能误示不读取学生前缀，正确机制是共享前缀而目标另由老师给出。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. All three gather around one blank draft strip on a desk. Nezu holds its near edge and asks a question; kumo keeps a paw on the same strip. Papi points to that shared strip with one paw while holding a separate small fan of plain cards in the other, visually separating the context being consulted from the guidance supplied. Do not discard or hide the draft; no teacher avatar, answer stamp or guaranteed repair. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "papi",
+      "kumo"
+    ],
+    "shows": "All three gather around one blank draft strip on a desk. Nezu holds its near edge and asks a question; kumo keeps a paw on the same strip. Papi points to that shared strip with one paw while holding a separate small fan of plain cards in the other, visually separating the context being consulted from the guidance supplied. Do not discard or hide the draft; no teacher avatar, answer stamp or guaranteed repair."
+  },
+  {
+    "n": 20,
+    "issues": [
+      "尺子量两根柱高会把KL暗示成简单柱高差或对称几何距离，未由正文支持。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Papi sets two unprinted mosaic strips side by side on a desk and inspects their differing patterns with a small magnifier. Kumo brings its face closer to compare the same two strips. No measuring tape, bar chart, geometric distance, scale marks or invented probabilities; the action is comparison, not a literal KL calculator. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi"
+    ],
+    "shows": "Papi sets two unprinted mosaic strips side by side on a desk and inspects their differing patterns with a small magnifier. Kumo brings its face closer to compare the same two strips. No measuring tape, bar chart, geometric distance, scale marks or invented probabilities; the action is comparison, not a literal KL calculator."
+  },
+  {
+    "n": 21,
+    "issues": [
+      "新增teacher/student；first then在单幅中易复制papi；同尺反向看仍像对称距离，误导KL方向。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. One papi stands at the end of a table with two different plain mosaic swatches, its body turned toward one while an open paw acknowledges the other. Kumo leans toward the opposite swatch, and nezu raises a cautionary paw between their viewpoints. Keep a single instant and one of each character; no teacher/student figures, duplicate papi, rulers or quantified discrepancy. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo",
+      "nezu"
+    ],
+    "shows": "One papi stands at the end of a table with two different plain mosaic swatches, its body turned toward one while an open paw acknowledges the other. Kumo leans toward the opposite swatch, and nezu raises a cautionary paw between their viewpoints. Keep a single instant and one of each character; no teacher/student figures, duplicate papi, rulers or quantified discrepancy."
+  },
+  {
+    "n": 22,
+    "issues": [
+      "工具可能把KL解释成物理尺子；papi有对白但visual遗漏。板外只需角色提出组合的动作。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Kumo at the lower center brings its two open paws together in a combining gesture without touching the board. Papi kneels beside kumo and responds with a measured open-paw gesture. No measuring tools or new compare diagram. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi"
+    ]
+  },
+  {
+    "n": 23,
+    "issues": [
+      "混音台重复机制图，滑杆随意位置制造未提供的混合比例。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi alone at the lower edge alternates its attention between the board's two comparison sides, with its two paws held open toward them at equal neutral height. This is a presentation gesture, not a proportional scale. No mixer, sliders or extra ratio diagram. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi"
+    ]
+  },
+  {
+    "n": 24,
+    "issues": [
+      "student figure额外角色；姿态驱动自移滑杆把概率计算误画成自动物理反应，且未表现本次更新比例先固定。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. At a small desk, papi deliberately sets one unlabeled demonstration slider and then holds it in place with a simple clamp. Kumo watches the clamp close, while nezu raises one paw to emphasize pausing at this setting for the current adjustment. No moving-on-its-own controls, student avatar, numerical scale or claim that this position is a measured optimal ratio. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi",
+      "nezu"
+    ],
+    "shows": "At a small desk, papi deliberately sets one unlabeled demonstration slider and then holds it in place with a simple clamp. Kumo watches the clamp close, while nezu raises one paw to emphasize pausing at this setting for the current adjustment. No moving-on-its-own controls, student avatar, numerical scale or claim that this position is a measured optimal ratio."
+  },
+  {
+    "n": 25,
+    "issues": [
+      "新增三运动员；双项目领奖台把局部logits诊断误画成训练效果竞赛，且把接近各自优势变成稳定排名。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. Papi makes one tiny adjustment to a single dial on a small tabletop test fixture. Nezu keeps a larger closed model-shaped box untouched beside it, one paw resting on its lid to emphasize that the whole model is not being retrained in this check. Kumo leans in to inspect the local dial rather than celebrating. No podium, athletes, medals, score displays or success symbols. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "papi",
+      "kumo"
+    ],
+    "shows": "Papi makes one tiny adjustment to a single dial on a small tabletop test fixture. Nezu keeps a larger closed model-shaped box untouched beside it, one paw resting on its lid to emphasize that the whole model is not being retrained in this check. Kumo leans in to inspect the local dial rather than celebrating. No podium, athletes, medals, score displays or success symbols."
+  },
+  {
+    "n": 26,
+    "issues": [
+      "新增三机器人；用人物体型暗示模型规模、用行李大小暗示精确内存比均多余；papi/nezu在visual缺位。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A single clear scene with visible interaction and ample quiet space for typeset dialogue. On a table are three plain open trays, each containing two identical-size unmarked sample chips. Papi moves the third tray into line; kumo checks that each tray has a pair, and nezu holds one chip from the nearest pair for closer inspection. This is only a count of three model choices times two precision settings, not a scale drawing of parameter counts or memory savings. No robots or labeled clipboard. All props are unlettered; no text, numerals, formulas, speech bubbles or watermarks in the art. No extra characters, sentient props or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi",
+      "nezu"
+    ],
+    "shows": "On a table are three plain open trays, each containing two identical-size unmarked sample chips. Papi moves the third tray into line; kumo checks that each tray has a pair, and nezu holds one chip from the nearest pair for closer inspection. This is only a count of three model choices times two precision settings, not a scale drawing of parameter counts or memory savings. No robots or labeled clipboard."
+  },
+  {
+    "n": 27,
+    "issues": [
+      "nezu有对白但characters遗漏；四间考场重复测试分类板，门牌易生文字或新增考生。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi stands low at one side of the board introducing its categories. Kumo leans forward from the lower edge with an interested raised paw; nezu sits on the opposite side and carefully raises a qualifying paw about the evaluation setup. No corridor, exam rooms, category symbols or additional students. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo",
+      "nezu"
+    ]
+  },
+  {
+    "n": 28,
+    "issues": [
+      "新增五个rival runners，赛跑/裁判暗示模型人格并重复基线分组；papi缺失。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Nezu crouches at the lower-right board corner with a scrutinizing expression and a paw extended toward the comparison. Papi sits lower-left, responding with an open, explanatory paw. No runners, starting line, referee costume or method mascots. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "papi"
+    ]
+  },
+  {
+    "n": 29,
+    "issues": [
+      "scoreboard和higher mark重复真实代码柱图，另画刻度容易歪曲未恢复差距。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Kumo at the lower-left is caught midway through a small excited hop, while nezu at the lower-right calmly holds one paw up to temper the celebration and directs its gaze back to the board. Do not draw score marks, extra bars, medals or victory banners. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "nezu"
+    ]
+  },
+  {
+    "n": 30,
+    "issues": [
+      "visual多出kumo；长账本重复数据表并易生成乱码。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi kneels below one corner of the board and sweeps a paw along its outside edge as if reviewing rows. Nezu crouches at the other corner, follows the same direction with focused eyes and raises one paw to qualify the conclusion. No kumo, ledger, extra table or writing. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "nezu"
+    ]
+  },
+  {
+    "n": 31,
+    "issues": [
+      "新增OnQ登山者、两个对手及teacher；峰顶旗暗示完整模型达到完美上限，爬山距离重复精确图。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi at lower-left gestures toward the results with a restrained explanatory posture. Nezu at lower-right leans back, looks toward the board's comparison area and extends a paw to emphasize the remaining gap. No mountain, summit, climbers, teacher figure or finish flag. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "nezu"
+    ]
+  },
+  {
+    "n": 32,
+    "issues": [
+      "按OnQ/对手摆具体卷轴伪造样本数、完成比例和长度；剪刀错把自动长度上限画成人工剪答卷；papi缺位。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Below the board, kumo begins a small relieved celebratory gesture. Papi crouches beside kumo and directs one open paw toward the result area without covering it. Nezu stands at the other lower corner with a measured palm-out gesture, reminding them to keep the evaluation scope in view. No scroll shelves, finished-versus-cut samples, scissors, added counts or speed symbols. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "papi",
+      "nezu"
+    ]
+  },
+  {
+    "n": 33,
+    "issues": [
+      "多张答卷和重复涂写重复数据含义，制造样本比例；文字样式易污染插图。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Nezu leans in from the lower-right with a magnifier held near its eye, inspecting the display without touching it. Papi at lower-left holds an open paw toward nezu as if explaining how the cases were reviewed. No answer-sheet pile, scribbles, classification badges or invented sample counts. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "papi"
+    ]
+  },
+  {
+    "n": 34,
+    "issues": [
+      "双轨道及题箱重复对照设计且暗示这里只有两组；另拿成绩单可产生与代码图冲突的数字，kumo缺位。"
+    ],
+    "recommended_visual": "Draw only kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; papi, the plump brown dog with floppy ears and a cream face patch, without glasses. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Kumo leans forward at the lower center in an excited noticing pose. Nezu gently raises a cautionary paw beside kumo; papi on the other side responds with a careful clarifying gesture. All three orient toward the same code result area. No training tracks, question boxes, extra scoresheets or causal arrows. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "kumo",
+      "nezu",
+      "papi"
+    ]
+  },
+  {
+    "n": 35,
+    "issues": [
+      "基本无身份错配；三卡片可被误当额外定量编码，宜移除并给角色质疑证据的动作。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Papi stands low beside the board, presenting the comparison with one open paw. Nezu leans closer and raises a second paw in a questioning gesture rather than applauding. No extra candidate cards, measurement props or significance symbols. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "nezu"
+    ]
+  },
+  {
+    "n": 36,
+    "issues": [
+      "visual多出papi；小警示牌与代码限制列表重复并易生成警告文字。"
+    ],
+    "recommended_visual": "Draw only nezu, the brown hedgehog with soft spikes and a ringed tail, not a mouse or raccoon; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Nezu sits at the lower-right with one paw held gently upright in a cautioning gesture. Kumo at the lower-left lowers its previously enthusiastic paws and listens thoughtfully. No papi, warning sign, caution icon or separate list. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "nezu",
+      "kumo"
+    ]
+  },
+  {
+    "n": 37,
+    "issues": [
+      "visual多出nezu；现场画勾重复代码清单且易把实测范围之外也标成已证实。"
+    ],
+    "recommended_visual": "Draw only papi, the plump brown dog with floppy ears and a cream face patch, without glasses; kumo, the fluffy light-blue cloud creature with two small green leaves and a curly tail. Each appears exactly once, matching the reference sheets. A large clean blank whiteboard occupies the main upper/central display area. Keep every character and prop below or at its outer sides; no body, paw or pointer crosses the display interior. The chart and all text will be composited separately by code. Kumo at the lower center turns slightly toward papi and counts through the recap with its small paws held near its chest, without marking the board. Papi seated beside kumo listens with a warm nod. No nezu, handwritten checkmarks, additional list or all-clear stamp. The board surface stays entirely blank: no text, symbols, bars, tables, arrows, checkmarks, diagrams or duplicate content. No extra characters, model avatars or miniature copies. Soft watercolor picture-book style.",
+    "recommended_characters": [
+      "papi",
+      "kumo"
+    ]
+  }
+]

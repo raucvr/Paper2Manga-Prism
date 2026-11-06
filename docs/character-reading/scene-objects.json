@@ -1,0 +1,534 @@
+{
+  "coordinate_space": "pixels",
+  "size": [
+    1024,
+    1536
+  ],
+  "instruction": "Use panels[n].objects as g.objects only with grounding size [1024,1536]; boxes are priority-ordered visual estimates, not normalized 0-1000. Do not treat unreviewed panels as having no objects.",
+  "panels": {
+    "1": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "7ff9621f68bbb4c8dcc1bd14b82a21903e00676ba0fea0e93225a05c0870401a",
+      "objects": [
+        [
+          304,
+          1113,
+          824,
+          1394
+        ],
+        [
+          182,
+          1104,
+          385,
+          1320
+        ]
+      ],
+      "object_labels": [
+        "已经装满的浅抽屉及卡片",
+        "尚待放入的厚卡片叠"
+      ]
+    },
+    "2": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "8afdc37edea356ee914b010ab41317721f014d85ff43e7a95a7a43f61e2c4c3f",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "3": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "6301024122b745b5709f2a03925803ede24647bafc8900b51a43265c3744fb09",
+      "objects": [
+        [
+          335,
+          1237,
+          886,
+          1405
+        ],
+        [
+          112,
+          1155,
+          485,
+          1410
+        ]
+      ],
+      "object_labels": [
+        "有限纸条与末端挡块",
+        "进纸滚筒及把手"
+      ]
+    },
+    "4": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "3cb721c7ea0a4d617a68f9b044143ec68982558eeeebea17533def771efddeea",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "5": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "3a93923277983d577b1f75740f1a08abf37f1f2df23f14f0d84bd97255693ddb",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "6": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "d285687f3ae9dc21eafd2f520a39a793651efa2dc41ff028160f1def88fb2214",
+      "objects": [
+        [
+          75,
+          1273,
+          588,
+          1385
+        ],
+        [
+          493,
+          1140,
+          599,
+          1228
+        ]
+      ],
+      "object_labels": [
+        "宽起始卡与已排列片段",
+        "小云手中尚待接上的新片段"
+      ]
+    },
+    "7": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "d1ed822ac8a3571dda74702c3d8bdb662381dfe6bdc06bc8294a8d089564da57",
+      "objects": [
+        [
+          243,
+          1294,
+          762,
+          1429
+        ]
+      ],
+      "object_labels": [
+        "桌面等大候选卡扇形排列"
+      ]
+    },
+    "8": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "e8e6a76a23d5fef301caae8e4d9af18e5815127251e39d89e819befca7649312",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "9": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "fe6d7d1f4e5a48d4b816fc9dc52fe3d092ed8dc4ca16b3858592e657946ca448",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "10": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "bb03c85a019a253db0a1df72a52f9ca833278e1a306c4acbdfdc9ebc87eb319e",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "11": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "f7f0777bfb4ce638c90d1eb5b1ffb1d30ef0d9262b32dbe89751541fc099b7bb",
+      "objects": [
+        [
+          685,
+          1163,
+          905,
+          1457
+        ],
+        [
+          143,
+          1174,
+          657,
+          1287
+        ],
+        [
+          107,
+          1314,
+          685,
+          1457
+        ],
+        [
+          752,
+          1039,
+          844,
+          1142
+        ]
+      ],
+      "object_labels": [
+        "两行不同结尾星形与六边形",
+        "上行相同前缀三块",
+        "下行相同前缀三块",
+        "小云手持不同片段"
+      ]
+    },
+    "12": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "430147b96999c375ba8c1e3ee1dbca56887435321844ef79008609e6583b618a",
+      "objects": [
+        [
+          59,
+          1320,
+          962,
+          1465
+        ],
+        [
+          121,
+          1163,
+          459,
+          1283
+        ]
+      ],
+      "object_labels": [
+        "较长的后续序列及其形状变化",
+        "原有较短参考序列"
+      ]
+    },
+    "13": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "6735bf3e949e73492881cfd6cc3714ee22f563a309d3251f0deb9b2ee4558639",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "14": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "d35e1ee510ce5f5be3f01225fb7137343b57f9eef82e01c258788161a697c036",
+      "objects": [
+        [
+          331,
+          1057,
+          437,
+          1377
+        ],
+        [
+          531,
+          1032,
+          637,
+          1375
+        ]
+      ],
+      "object_labels": [
+        "低于参考点的滑块与刻度杆",
+        "高于参考点的滑块与刻度杆"
+      ]
+    },
+    "15": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "60757e904be2c1bbf93d98a7965e75f177d725474e75f23e69be92ccda108d8a",
+      "objects": [
+        [
+          425,
+          940,
+          718,
+          1087
+        ],
+        [
+          211,
+          1270,
+          398,
+          1449
+        ]
+      ],
+      "object_labels": [
+        "两张互不相连的便签与图钉",
+        "两头未连接的松弛线缆"
+      ]
+    },
+    "16": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "8cb150257cbaecbba95eb5052b6b7f756884ce9cda8a9e431d31dd543f066ba3",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "17": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "f6d5585fd738bae22411ad9beddc79c2fa317d396b498a2788102534ae3988d8",
+      "objects": [
+        [
+          354,
+          887,
+          512,
+          1383
+        ],
+        [
+          543,
+          884,
+          697,
+          1385
+        ]
+      ],
+      "object_labels": [
+        "正在微调的完整积木塔与旋钮",
+        "保持不变的同结构参考塔"
+      ]
+    },
+    "18": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "2ed3d95bd60dfe38f80c2e649f911b3df1725e1d6f7563c205423b0004781246",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "19": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "49877a639390d2caff7fa7988a765a8ccc08001563a63d6e4523266179595263",
+      "objects": [
+        [
+          152,
+          1256,
+          799,
+          1407
+        ],
+        [
+          567,
+          1021,
+          732,
+          1143
+        ]
+      ],
+      "object_labels": [
+        "共同查看的草稿前缀",
+        "另行提供的参考卡片"
+      ]
+    },
+    "20": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "f26a0c630e1347103ce108376652f8b3124ba001658ce80494dd1f12b396c6aa",
+      "objects": [
+        [
+          105,
+          1272,
+          481,
+          1372
+        ],
+        [
+          483,
+          1274,
+          850,
+          1373
+        ]
+      ],
+      "object_labels": [
+        "左侧不同排列示意块",
+        "右侧不同排列示意块"
+      ]
+    },
+    "21": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "6dfafce672b528400653c88a394277b41c9ca9bba75ed52aa95b035daf4c6059",
+      "objects": [
+        [
+          93,
+          1253,
+          416,
+          1416
+        ],
+        [
+          523,
+          1250,
+          863,
+          1415
+        ]
+      ],
+      "object_labels": [
+        "左侧比较样片",
+        "右侧比较样片"
+      ]
+    },
+    "22": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "757c3248692d9f639843aa3a8f84079ac23587d50ee47ceb5efca7e72215baec",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "23": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "fb714aaf3a7fadc8a8013e9937d5724e2d74a482eb99e4b29214593503f913c3",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "24": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "b94d08975cf2db62cc88bc7add69acbbda37226dc70de6414b4fee52764d360f",
+      "objects": [
+        [
+          291,
+          1137,
+          652,
+          1299
+        ]
+      ],
+      "object_labels": [
+        "本轮固定的滑块与夹具"
+      ],
+      "note": "The earlier Nezu tail overlap is fixed: _compose now includes protected objects in tail/name-tab obstacles. Actual recomposition verifies the entire clamp box and all three head boxes unchanged; tail stops at [632,1312], without changing bubble rectangles or 40px text. See tail-object-check/verification.json."
+    },
+    "25": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "6dc94b69ef039007d140f397b80cf235ead3ef1f8b651f5e18710cc00631165a",
+      "objects": [
+        [
+          197,
+          1311,
+          430,
+          1456
+        ],
+        [
+          435,
+          1221,
+          745,
+          1423
+        ]
+      ],
+      "object_labels": [
+        "仅局部微调的旋钮试验台",
+        "未打开未调整的完整模型示意箱"
+      ]
+    },
+    "26": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "dec87d894d98e2aaa7dff07cfbb082be001ea3e23ac317fef2755d40e2ba4957",
+      "objects": [
+        [
+          43,
+          1309,
+          721,
+          1445
+        ]
+      ],
+      "object_labels": [
+        "三个托盘各含两枚样片"
+      ],
+      "note": "Repainted image verified: exactly three trays with two chips each, six total, no loose held chip. The previous seven-chip image is archived in pilot-initial/art_26_seven_chips.png; its old box and hash are superseded."
+    },
+    "27": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "78bb002b4539f04e1c342c3c306ce05342b8d494139a800d1bf526ab79df9688",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "28": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "78a7b6524746750e1928ccbbf933d8bc04fb28ec6ff8500d18102182e13eb058",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "29": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "7f2429850708a460ef528f3d3f93dd8a745d4c532b73d7ca21bbd639a332051a",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "30": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "2d72dcd81f84faac670a3f021dfb43808fb1c2aaeeb8dfc58b3b23211ba71a35",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "31": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "7f1271b859c52b974cf13a49287892277c5163137fc4cce4a5113c5612d52f11",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "32": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "2e291daeb8e97020ca783b8a0b86498c9d08f1a37e69c936b06592346a50255a",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board surface is already protected by chart grounding; no scene-object exclusion added. Character bodies, desks and background are not blocked."
+    },
+    "33": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "df806d0e82dac0621aae96d52fd0acc4ab1f59e3582b561fb3d8236927133684",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "34": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "5df0a3ebd2dbaa2cfa2143b8b55efe139aac04d1ea74c9f6a091d306e3a9e748",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "35": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "258e4717ce57296e3c6350fd02ee3e96074fbc445cc22c3ce789613b6bd45625",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "36": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "69b00cf049a09d01df378cbd5ca785aac3b4800ec99d41cf58c2b15ae5354f59",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "37": {
+      "kind": "board",
+      "reviewed": true,
+      "image_sha256": "1e7b56b7912839373f87783ad4d3e6221678877605407d001830fdf621114132",
+      "objects": [],
+      "object_labels": [],
+      "note": "Board protected by chart grounding; no scene-object exclusions added."
+    },
+    "38": {
+      "kind": "scene",
+      "reviewed": true,
+      "image_sha256": "19fbee58f557bbbc0d67c16fe137e32aec847ea479e2d0a2d68d592ee16e9785",
+      "objects": [],
+      "object_labels": [],
+      "note": "No teaching prop: the empty table, stools and character bodies are not exclusion regions."
+    }
+  }
+}

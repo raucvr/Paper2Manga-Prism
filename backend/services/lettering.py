@@ -10,8 +10,9 @@ The image model draws no text at all; this module adds every word in code, deter
 - on board panels, the exhibit drawn by services.boards into the blank part of the board (multiply blend); its top
   gives up to three 12 % steps when the narration box or the bubbles need room (and gets back what they leave unused);
   when the exhibit cannot be drawn at all, the panel is lettered as a scene and layout["board_error"] says why;
-- a caption strip below the art (canvas extended downward) when the words cannot fit at the minimum size:
-  the narration, then "Name: text" lines for the bubbles that did not fit; layout["fallback"] is True.
+- a caption strip when the words cannot fit at the minimum size: standalone narration goes above the art;
+  mixed narration, exhibit and leftover dialogue go below it. The original art stays full size; layout["fallback"]
+  is True and layout["art_offset"] records the translation when a strip is prepended.
 
 All lengths are given for a 1024 px wide panel and scale with the art width. Pure PIL + numpy, no network.
 """
@@ -925,17 +926,24 @@ class _Ctx:
         """Clearance around a head box: grounding boxes are approximate, and a tail stub needs room."""
         return 16 * self.s + 0.04 * max(head[2] - head[0], head[3] - head[1])
 
-    def shapes(self, text: str, size: int) -> list[_Shape]:
+    def shapes(self, text: str, size: int, wide: bool = False) -> list[_Shape]:
         """Bubble shapes for a text at one size: the balanced wraps from the fewest lines to a few more."""
-        key = (text, size)
+        key = (text, size, wide)
         if key not in self.shapes_cache:
             face = self.fonts.face(self.language, size, emphasis=True)
             shown = _pretty(text, face)
             lh = _line_height(face.size)
             ux1, uy1, ux2, uy2 = self.usable
-            max_w = min(0.62 * self.W, (ux2 - ux1) - 1.4 * size - 2 * self.stroke)
+            full_w = (ux2 - ux1) - 1.4 * size - 2 * self.stroke
+            max_w = min(0.62 * self.W, full_w)
+            # Keep the usual rounded shapes, but also try wider, shorter wraps. A long
+            # line need not occupy half the available height just to stay under 62% width.
+            layouts = _balanced_layouts(shown, self.lang, face, max_w)
+            if wide and full_w > max_w:
+                layouts += [lines for lines in _balanced_layouts(shown, self.lang, face, full_w)
+                            if lines not in layouts]
             out = []
-            for lines in _balanced_layouts(shown, self.lang, face, max_w):
+            for lines in layouts:
                 widths = [face.length(line) for line in lines]
                 block = TextBlock(face, lh, lines, max(widths), lh * len(lines))
                 a, b = _axes(block, widths)
@@ -995,7 +1003,7 @@ class _Planner:
         return 0.8 * np.abs(cx - (hx1 + hx2) / 2) + vert + 0.12 * y1
 
     def candidates(self, shapes: Sequence[_Shape], sat: np.ndarray, prev: Optional[Rect], head: Optional[Rect],
-                   k: int) -> list[tuple[float, float, float, _Shape]]:
+                   k: int, reading_first: bool = False) -> list[tuple[float, float, float, _Shape]]:
         s, c = self.ctx.s, self.cell
         bx1, by1, bx2, by2 = self.band
         pool = []
@@ -1020,9 +1028,19 @@ class _Planner:
             busy = (self.busy[j + kh, i + kw] - self.busy[j, i + kw] - self.busy[j + kh, i] + self.busy[j, i]) / (kw * kh)
             in_band = (x1 >= bx1 - c) & (y1 >= by1 - c) & (x2 <= bx2 + c) & (y2 <= by2 + c)
             cost = self._cost(cx, cy, x1, y1, x2, y2, head) + busy * 320 * s + np.where(in_band, 0.0, 400 * s) + sh.cost
-            for idx in np.argsort(cost, kind="stable")[:300]:
+            if reading_first:
+                # The proximity shortlist can contain only the bottom of a large free
+                # band. Once the first bubble goes there, reading order strands the
+                # unused room above it. Retain top/left packing candidates explicitly.
+                indices = np.lexsort((cost, x1, y2))[:300]
+            else:
+                indices = np.argsort(cost, kind="stable")[:300]
+            for idx in indices:
                 pool.append((float(cost[idx]), si, float(cy[idx]), float(cx[idx]), sh))
-        pool.sort(key=lambda t: t[:4])
+        if reading_first:
+            pool.sort(key=lambda t: (t[2] + t[4].fh / 2, t[3] - t[4].fw / 2, t[0], t[1]))
+        else:
+            pool.sort(key=lambda t: t[:4])
         picked: list[tuple[float, float, float, _Shape]] = []
         for cost, _, cy, cx, sh in pool:
             if all(math.hypot(cx - p[1], cy - p[2]) > 80 * s for p in picked):
@@ -1031,7 +1049,8 @@ class _Planner:
                     break
         return picked
 
-    def search(self, items: Sequence[tuple[str, str, Sequence[_Shape]]], nodes: int = 60):
+    def search(self, items: Sequence[tuple[str, str, Sequence[_Shape]]], nodes: int = 60,
+               reading_first: bool = False):
         """(best complete placement or None, deepest partial placement) for the items in order."""
         best: list = [None, math.inf]
         deepest: list = [0, math.inf, []]
@@ -1050,7 +1069,7 @@ class _Planner:
             budget[0] -= 1
             speaker, text, shapes = items[k]
             prev = placed[-1].rect if placed else None
-            for cost, cx, cy, sh in self.candidates(shapes, _sat(occ), prev, self.ctx.heads.get(speaker), 4 if k == 0 else 3):
+            for cost, cx, cy, sh in self.candidates(shapes, _sat(occ), prev, self.ctx.heads.get(speaker), 4 if k == 0 else 3, reading_first):
                 pb = PlacedBubble(speaker, text, sh.block, cx, cy, sh.a, sh.b, self.ctx.stroke)
                 nxt = occ.copy()
                 self.block(nxt, pb.rect, self.ctx.bubble_gap)
@@ -1070,9 +1089,16 @@ def _plan(ctx: _Ctx, bubbles: Sequence[tuple[str, str]], band: Rect, avoid: Sequ
     planner = planner or _Planner(ctx, band, avoid)
     for size in ctx.bubble_sizes:
         items = [(spk, text, ctx.shapes(text, size)) for spk, text in bubbles]
-        if any(not shapes for _, _, shapes in items):
-            continue
-        full, _ = planner.search(items)
+        full = None
+        if all(shapes for _, _, shapes in items):
+            full, _ = planner.search(items)
+        if full is None:
+            # Preserve the existing layout whenever it works. Only then try wider
+            # wraps and packing from the top, without relaxing any protected area,
+            # reading-order constraint, or the configured font-size minimum.
+            items = [(spk, text, ctx.shapes(text, size, wide=True)) for spk, text in bubbles]
+            if all(shapes for _, _, shapes in items):
+                full, _ = planner.search(items, reading_first=True)
         if full:
             return size, full
     return None
@@ -1103,7 +1129,8 @@ def plan_bubbles(W: int, H: int, band: Rect, bubbles: Sequence[tuple[str, str]],
 
 def _tails(ctx: _Ctx, placed: Sequence[PlacedBubble], bodies: Sequence[list], blocked: Sequence[Rect]):
     """Per bubble (polygon, base, tip) or None: aimed at the speaker's head and cut short before it would enter a
-    head box, the chart, the narration, another bubble or an earlier tail; at least a short stub when possible."""
+    head box, a protected object, the chart, the narration, another bubble or an earlier tail;
+    at least a short stub when possible."""
     W, H, s, st = ctx.W, ctx.H, ctx.s, ctx.stroke
     base = np.zeros((H, W), bool)
     fx1, fy1, fx2, fy2 = (int(round(v)) for v in ctx.frame)
@@ -1648,7 +1675,8 @@ def letter_panel(art: Image.Image, panel, grounding: Optional[Grounding], langua
     words need room); the narration goes in the band above the exhibit when it takes at most 55 % of it, else it
     becomes the board's subtitle. Without a usable board the exhibit is pinned on a white card in the largest
     head-free area.
-    When the words still do not fit at the minimum size, a caption strip is appended below the art (fallback).
+    When words cannot fit at the minimum size, a fallback strip extends the canvas. Standalone narration goes
+    above the art; mixed fallback content stays below. A prepended strip records layout["art_offset"].
     board_renderer(spec, language, (w, h), fonts) -> PIL image; defaults to services.boards.render_board. When it
     fails, the panel is lettered as a scene and layout["board_error"] says why (the same spec would fail on every
     retry, so failing the panel would only throw the paid art away). Raises LayoutError only for unusable art.
@@ -1684,7 +1712,7 @@ def _compose(ctx: _Ctx, plan: _Plan, art_size: tuple[int, int], narration_text: 
     nb = plan.narration_box
     if nb:
         draw_narration(img, nb, ctx.s)
-    blocked = list(heads.values()) + ([plan.chart] if plan.chart else []) + ([nb.rect] if nb else [])
+    blocked = list(heads.values()) + list(ctx.objects) + ([plan.chart] if plan.chart else []) + ([nb.rect] if nb else [])
     tails = draw_bubbles(img, plan.bubbles, heads, blocked, ctx=ctx)
 
     strip_items: list[tuple[Optional[str], str]] = []
@@ -1723,4 +1751,28 @@ def _compose(ctx: _Ctx, plan: _Plan, art_size: tuple[int, int], narration_text: 
         "strip": strip_layout,
         "fallback": bool(plan.fallback),
     }
+    if strip_layout and plan.narration_mode == "strip" and not plan.leftover and not chart_in_strip:
+        # A standalone introduction must precede the dialogue. Move the already
+        # rendered strip intact: no replanning, resizing, or redraw of the art.
+        h = art_size[1]
+        offset = img.height - h
+        above = Image.new("RGB", img.size)
+        above.paste(img.crop((0, h, img.width, img.height)), (0, 0))
+        above.paste(img.crop((0, 0, img.width, h)), (0, offset))
+        img = above
+
+        def shift_rect(rect, dy):
+            return [rect[0], rect[1] + dy, rect[2], rect[3] + dy]
+
+        strip_layout["rect"] = shift_rect(strip_layout["rect"], -h)
+        strip_layout["placement"] = "above"
+        if narration_layout:
+            narration_layout["rect"] = list(strip_layout["rect"])
+        for bubble in layout["bubbles"]:
+            bubble["rect"] = shift_rect(bubble["rect"], offset)
+            if bubble["tail"]:
+                bubble["tail"] = [[x, y + offset] for x, y in bubble["tail"]]
+        if layout["chart"]:
+            layout["chart"] = shift_rect(layout["chart"], offset)
+        layout["art_offset"] = [0, offset]
     return img, layout

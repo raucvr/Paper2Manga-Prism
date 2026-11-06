@@ -1,0 +1,192 @@
+{
+  "17": {
+    "file": "art/art_17.png",
+    "sha256": "f6d5585fd738bae22411ad9beddc79c2fa317d396b498a2788102534ae3988d8",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "3": {
+    "file": "art/art_03.png",
+    "sha256": "6301024122b745b5709f2a03925803ede24647bafc8900b51a43265c3744fb09",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "2": {
+    "file": "art/art_02.png",
+    "sha256": "8afdc37edea356ee914b010ab41317721f014d85ff43e7a95a7a43f61e2c4c3f",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "16": {
+    "file": "art/art_16.png",
+    "sha256": "8cb150257cbaecbba95eb5052b6b7f756884ce9cda8a9e431d31dd543f066ba3",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "14": {
+    "file": "art/art_14.png",
+    "sha256": "d35e1ee510ce5f5be3f01225fb7137343b57f9eef82e01c258788161a697c036",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "28": {
+    "file": "art/art_28.png",
+    "sha256": "78a7b6524746750e1928ccbbf933d8bc04fb28ec6ff8500d18102182e13eb058",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "29": {
+    "file": "art/art_29.png",
+    "sha256": "7f2429850708a460ef528f3d3f93dd8a745d4c532b73d7ca21bbd639a332051a",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "15": {
+    "file": "art/art_15.png",
+    "sha256": "60757e904be2c1bbf93d98a7965e75f177d725474e75f23e69be92ccda108d8a",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "1": {
+    "file": "art/art_01.png",
+    "sha256": "7ff9621f68bbb4c8dcc1bd14b82a21903e00676ba0fea0e93225a05c0870401a",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "5": {
+    "file": "art/art_05.png",
+    "sha256": "3a93923277983d577b1f75740f1a08abf37f1f2df23f14f0d84bd97255693ddb",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "11": {
+    "file": "art/art_11.png",
+    "sha256": "f7f0777bfb4ce638c90d1eb5b1ffb1d30ef0d9262b32dbe89751541fc099b7bb",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "10": {
+    "file": "art/art_10.png",
+    "sha256": "bb03c85a019a253db0a1df72a52f9ca833278e1a306c4acbdfdc9ebc87eb319e",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "4": {
+    "file": "art/art_04.png",
+    "sha256": "3cb721c7ea0a4d617a68f9b044143ec68982558eeeebea17533def771efddeea",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "38": {
+    "file": "art/art_38.png",
+    "sha256": "19fbee58f557bbbc0d67c16fe137e32aec847ea479e2d0a2d68d592ee16e9785",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "12": {
+    "file": "art/art_12.png",
+    "sha256": "430147b96999c375ba8c1e3ee1dbca56887435321844ef79008609e6583b618a",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "6": {
+    "file": "art/art_06.png",
+    "sha256": "d285687f3ae9dc21eafd2f520a39a793651efa2dc41ff028160f1def88fb2214",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "7": {
+    "file": "art/art_07.png",
+    "sha256": "d1ed822ac8a3571dda74702c3d8bdb662381dfe6bdc06bc8294a8d089564da57",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "13": {
+    "file": "art/art_13.png",
+    "sha256": "6735bf3e949e73492881cfd6cc3714ee22f563a309d3251f0deb9b2ee4558639",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "36": {
+    "file": "art/art_36.png",
+    "sha256": "69b00cf049a09d01df378cbd5ca785aac3b4800ec99d41cf58c2b15ae5354f59",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "22": {
+    "file": "art/art_22.png",
+    "sha256": "757c3248692d9f639843aa3a8f84079ac23587d50ee47ceb5efca7e72215baec",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "23": {
+    "file": "art/art_23.png",
+    "sha256": "fb714aaf3a7fadc8a8013e9937d5724e2d74a482eb99e4b29214593503f913c3",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "37": {
+    "file": "art/art_37.png",
+    "sha256": "1e7b56b7912839373f87783ad4d3e6221678877605407d001830fdf621114132",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "21": {
+    "file": "art/art_21.png",
+    "sha256": "6dfafce672b528400653c88a394277b41c9ca9bba75ed52aa95b035daf4c6059",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "35": {
+    "file": "art/art_35.png",
+    "sha256": "258e4717ce57296e3c6350fd02ee3e96074fbc445cc22c3ce789613b6bd45625",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "9": {
+    "file": "art/art_09.png",
+    "sha256": "fe6d7d1f4e5a48d4b816fc9dc52fe3d092ed8dc4ca16b3858592e657946ca448",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "8": {
+    "file": "art/art_08.png",
+    "sha256": "e8e6a76a23d5fef301caae8e4d9af18e5815127251e39d89e819befca7649312",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "34": {
+    "file": "art/art_34.png",
+    "sha256": "5df0a3ebd2dbaa2cfa2143b8b55efe139aac04d1ea74c9f6a091d306e3a9e748",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "20": {
+    "file": "art/art_20.png",
+    "sha256": "f26a0c630e1347103ce108376652f8b3124ba001658ce80494dd1f12b396c6aa",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "18": {
+    "file": "art/art_18.png",
+    "sha256": "2ed3d95bd60dfe38f80c2e649f911b3df1725e1d6f7563c205423b0004781246",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "24": {
+    "file": "art/art_24.png",
+    "sha256": "b94d08975cf2db62cc88bc7add69acbbda37226dc70de6414b4fee52764d360f",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "30": {
+    "file": "art/art_30.png",
+    "sha256": "2d72dcd81f84faac670a3f021dfb43808fb1c2aaeeb8dfc58b3b23211ba71a35",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "31": {
+    "file": "art/art_31.png",
+    "sha256": "7f1271b859c52b974cf13a49287892277c5163137fc4cce4a5113c5612d52f11",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "25": {
+    "file": "art/art_25.png",
+    "sha256": "6dc94b69ef039007d140f397b80cf235ead3ef1f8b651f5e18710cc00631165a",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "19": {
+    "file": "art/art_19.png",
+    "sha256": "49877a639390d2caff7fa7988a765a8ccc08001563a63d6e4523266179595263",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "33": {
+    "file": "art/art_33.png",
+    "sha256": "df806d0e82dac0621aae96d52fd0acc4ab1f59e3582b561fb3d8236927133684",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "27": {
+    "file": "art/art_27.png",
+    "sha256": "78bb002b4539f04e1c342c3c306ce05342b8d494139a800d1bf526ab79df9688",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "26": {
+    "file": "art/art_26.png",
+    "sha256": "dec87d894d98e2aaa7dff07cfbb082be001ea3e23ac317fef2755d40e2ba4957",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  },
+  "32": {
+    "file": "art/art_32.png",
+    "sha256": "2e291daeb8e97020ca783b8a0b86498c9d08f1a37e69c936b06592346a50255a",
+    "provider": "OpenAI built-in image_gen; exact model ID not exposed"
+  }
+}
