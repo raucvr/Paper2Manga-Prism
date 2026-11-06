@@ -177,6 +177,7 @@ class JobRuntime:
     """Everything that is not JSON-serialisable."""
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
     task: Optional[asyncio.Task] = None
+    relayout_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     engines: Optional[Engines] = None
     cast = None
     sheets: dict = field(default_factory=dict)
@@ -353,7 +354,7 @@ class JobManager:
         job = self._load(job_id)
         if not job:
             return None
-        if job.state["status"] not in TERMINAL or job.running:
+        if job.state["status"] not in TERMINAL or job.running or job.rt.relayout_lock.locked():
             raise ValueError("Job is still running")
         if not any(p["n"] == n for p in job.state["panels"]):
             raise ValueError(f"No panel {n}")
@@ -1166,9 +1167,17 @@ class JobManager:
         job = self._load(job_id)
         if not job:
             return None
-        s, rt = job.state, job.rt
-        if s["status"] not in TERMINAL or job.running:
+        if job.state["status"] not in TERMINAL or job.running or job.rt.relayout_lock.locked():
             raise ValueError("Job is still running")
+        # No await separates the busy check from acquiring this uncontended lock. Regenerate likewise
+        # registers its task before yielding, so neither operation can pass the other's guard. Reject
+        # competing requests instead of queueing stale relayouts; exceptions/cancellation release it.
+        async with job.rt.relayout_lock:
+            return await self._relayout(job)
+
+    async def _relayout(self, job: Job) -> dict:
+        """Re-letter while the caller holds this job's relayout lock (single API process only)."""
+        s, rt = job.state, job.rt
         if int(s.get("version") or 2) < 3:
             raise ValueError("Only v3 jobs keep their art apart from the lettering")
         from services import lettering

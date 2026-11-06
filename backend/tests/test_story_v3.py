@@ -1138,8 +1138,10 @@ async def test_v3_translation_must_keep_the_numbers_of_each_line():
     assert len(engine.calls) == 2 and '"28.4 on English-German. Fine."' in engine.prompts[1]
 
     engine = FakeEngine([reply("英德翻译。好吧。"), {"panels": [{"n": 1, "dialogue": [{"speaker": "nezu", "text": "还是没有数字。"}]}]}])
-    sb = await StoryboarderV2(engine).translate(storyboard(), "zh-CN")
-    assert sb.panels[0].dialogue[0].text == "还是没有数字。"              # twice: Chinese beats an English panel (logged)
+    writer = StoryboarderV2(engine)
+    sb = await writer.translate(storyboard(), "zh-CN")
+    assert sb.panels[0].dialogue[0].text == "28.4 on English-German. Fine."
+    assert len(engine.calls) == 2 and writer.skipped  # preserve evidence and disclose the incomplete translation
 
 
 def test_a_stray_section_number_is_neither_abstract_text_nor_a_claim():

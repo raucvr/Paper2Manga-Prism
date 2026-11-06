@@ -9,7 +9,8 @@
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:quality-notes": "node --test tests/quality-notes.test.mjs"
   },
   "dependencies": {
     "next": "14.2.35",

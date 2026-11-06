@@ -318,10 +318,21 @@ def translation_of(payload: dict) -> dict:
 
 
 def _zh_line(line: str, english: str) -> str:
-    """A zh-CN line that keeps the numbers of the English line, as a real translation does (28.4 stays 28.4); the v2
-    lines already hold theirs (the panel number), so they read exactly as before."""
-    have = re.findall(r"\d+(?:[.,]\d+)*", line)
-    return line + "".join(f" {x}" for x in re.findall(r"\d+(?:[.,]\d+)*", english) if x not in have)
+    """Keep the fixture's figures without inventing a panel number in its translated prose.
+
+    v2's source already contains the panel number, so those fixture strings stay the same.
+    This is a scripted translation stub, not a general-purpose number parser.
+    """
+    words = dict(zip("one two three four five six seven eight nine ten eleven twelve".split(), range(1, 13)))
+    source = re.findall(r"\d+(?:[.,]\d+)*", english)
+    source += [str(words[w.lower()]) for w in re.findall(r"\b(?:" + "|".join(words) + r")\b", english, re.I)]
+    remaining = list(source)
+    for n in re.findall(r"\d+(?:[.,]\d+)*", line):
+        if n not in remaining:
+            line, remaining = "译文", list(source)
+            break
+        remaining.remove(n)
+    return line + "".join(f" {n}" for n in remaining)
 
 
 def _board_zh(text: str) -> str:

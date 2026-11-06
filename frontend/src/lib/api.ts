@@ -322,7 +322,7 @@ export interface JobState {
   version?: number;
   /** v3: the abstract check's result. Absent (or null) in older jobs and before the storyboard exists. */
   quiz?: JobQuiz | null;
-  /** What was checked: checks that could not run and panels whose art could not be checked. Absent in older jobs. */
+  /** What was checked: steps that did not finish, backup-model use and pictures left unchecked. Absent in older jobs. */
   quality?: JobQuality | null;
 }
 
@@ -335,6 +335,10 @@ export interface JobQuality {
   scrubbed?: number;
   /** Panels lettered without a check of the art (the vision call failed). */
   unchecked_art?: number[];
+  /** Teaching scenes whose picture was published without a verdict on its idea. May overlap `unchecked_art`. */
+  unchecked_idea?: number[];
+  /** Work done by the writer's model because a role's own model could not take it: the work ran, on a backup model. */
+  fallbacks?: string[];
 }
 
 export interface JobSummary {

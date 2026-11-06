@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   CircleSlash,
   ClipboardCheck,
   Link2,
@@ -21,6 +22,7 @@ import { GenerationProgress, JobStatusBar } from "@/components/GenerationProgres
 import { Reader, type ReaderHandle } from "@/components/Reader";
 import { api, describeError, type JobQuality, type JobQuiz, type JobState } from "@/lib/api";
 import { isNewJobLanguage, isTerminal, jobTitle, quizPercent } from "@/lib/job-utils";
+import { qualityNotes } from "@/lib/quality-notes";
 import { useJob, type DemoSource } from "@/hooks/useJob";
 import { buildJobForm, useAppStore } from "@/store/app-store";
 
@@ -61,23 +63,63 @@ function QuizBadge({ quiz }: { quiz: JobQuiz | null | undefined }) {
   );
 }
 
-/** "Some checks did not run": shown only when a check of the script could not run or a panel's art went unchecked. */
-function QualityNote({ quality }: { quality: JobQuality | null | undefined }) {
-  const skipped = quality?.skipped ?? [];
-  const unchecked = quality?.unchecked_art ?? [];
-  if (skipped.length === 0 && unchecked.length === 0) return null;
-  const lines = [
-    ...skipped.map((s) => `${s.stage} did not run (${s.error})`),
-    ...(unchecked.length ? [`panel${unchecked.length > 1 ? "s" : ""} ${unchecked.join(", ")}: the art could not be checked`] : []),
-  ];
+/**
+ * What the reader should know about the job's checks; nothing for a job with nothing to disclose. A native disclosure, so
+ * the details open by tap and keyboard and reach screen readers. The panel is placed against the top bar, to fit a phone.
+ */
+export function QualityNote({ quality }: { quality: JobQuality | null | undefined }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const closeOutside = (e: PointerEvent) => {
+      const details = detailsRef.current;
+      if (details?.open && !details.contains(e.target as Node)) details.open = false;
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, []);
+
+  const notes = qualityNotes(quality);
+  if (!notes) return null;
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDetailsElement>) => {
+    // The reader's page keys listen on the window. Space must toggle the note, not turn the page; while the note is open
+    // every key stays here, so the arrows scroll its details. Closed, the other keys still reach the reader.
+    if (e.currentTarget.open || e.key === " " || e.key === "Spacebar") e.stopPropagation();
+    if (e.key === "Escape" && e.currentTarget.open) {
+      e.currentTarget.open = false;
+      e.currentTarget.querySelector("summary")?.focus();
+    }
+  };
+
   return (
-    <span
-      className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200"
-      title={`Some automatic checks did not run, so this manga may contain mistakes they would have caught:\n${lines.join("\n")}`}
-    >
-      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="sr-only sm:not-sr-only">Some checks did not run</span>
-    </span>
+    <details ref={detailsRef} className="group shrink-0" onKeyDown={onKeyDown}>
+      <summary className="flex h-10 min-w-10 cursor-pointer list-none items-center justify-center rounded-full focus-visible:outline-none [&::-webkit-details-marker]:hidden [&:focus-visible>span]:ring-2 [&:focus-visible>span]:ring-primary-400">
+        <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="sr-only sm:not-sr-only">{notes.label}</span>
+          <ChevronDown className="hidden h-3 w-3 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none sm:block" aria-hidden="true" />
+        </span>
+      </summary>
+      <div
+        tabIndex={0}
+        className="absolute inset-x-2 top-full z-30 max-h-[70dvh] space-y-3 overflow-y-auto rounded-2xl bg-white p-3 text-xs text-foreground shadow-xl ring-1 ring-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 sm:left-auto sm:right-4 sm:w-96"
+      >
+        {notes.sections.map((section) => (
+          <section key={section.kind}>
+            <h2 className="font-semibold text-amber-800">{section.heading}</h2>
+            <p className="mt-0.5 text-muted-foreground">{section.explanation}</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {section.items.map((item, i) => (
+                <li key={i} className="break-words">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -117,7 +159,7 @@ function JobAppBar({
     "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400";
 
   return (
-    <header className="flex h-[var(--appbar-h)] shrink-0 items-center gap-1 px-2 sm:gap-2 sm:px-4">
+    <header className="relative flex h-[var(--appbar-h)] shrink-0 items-center gap-1 px-2 sm:gap-2 sm:px-4">
       <a
         href="/"
         onClick={(e) => {

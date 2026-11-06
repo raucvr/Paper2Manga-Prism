@@ -24,6 +24,7 @@ import json
 import math
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field, asdict
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Optional
@@ -791,7 +792,7 @@ Output JSON only with the same structure.
 
 # a translation that is stronger than its English line (7 of 38 Chinese fact-check findings were added in translation:
 # "extremely hard" became 根本没法, "solved" 完美解决), or drops the English line's hedge
-ZH_STRONG_RE = re.compile(r"完美|完全|根本|彻底|所有|全部|一定|绝对|总是|永远|毫无|全都|完胜|碾压|任何")
+ZH_STRONG_RE = re.compile(r"完美|完全|根本|彻底|所有|全部|(?<!第)一定|绝对|总是|永远|毫无|全都|完胜|碾压|任何")
 EN_STRONG_RE = re.compile(r"\b(?:perfect(?:ly)?|complete(?:ly)?|entire(?:ly)?|total(?:ly)?|fully|all|every(?:thing|one)?|always|never|"
                           r"absolute(?:ly)?|definitely|whole|any|nothing|none|no)\b", re.I)
 HEDGES = [   # (English hedge, the Chinese words that keep it)
@@ -815,6 +816,8 @@ def translation_problems(english: str, translated: str, language: str, names: fr
         return []
     out = []
     strong = ZH_STRONG_RE.findall(translated)
+    if re.search(r"\bcertain(?:ly)?\b", english, re.I):
+        strong = [word for word in strong if word != "一定"]
     if strong and not EN_STRONG_RE.search(english):
         out.append(f"stronger than the English ('{strong[0]}'): keep the English line's strength")
     for en_hedge, zh_hedge in HEDGES:
@@ -2209,6 +2212,125 @@ def _figures_kept(source: str, new: str) -> bool:
     "8" may become 八); numbers it adds are fine."""
     have = _number_keys(new)
     return all(key in have for _, key in _number_tokens(source))
+
+
+_TRANSLATION_CJK_DIGITS = "零〇一二两兩三四五六七八九"
+_TRANSLATION_CJK_SCALES = "十百千万萬亿億兆京"
+_TRANSLATION_CJK_CHARS = _TRANSLATION_CJK_DIGITS + _TRANSLATION_CJK_SCALES
+_TRANSLATION_CJK_RUN = re.compile(
+    r"[+-]?(?:(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[" + _TRANSLATION_CJK_CHARS + r"])+"
+    r"(?:[.点點・](?:[0-9]+|[" + _TRANSLATION_CJK_CHARS + r"])+)*")
+
+
+def _translation_cjk_value(token: str) -> str:
+    """Bounded positional digits, descending 十/百/千 and 万/亿 sections (traditional forms too).
+
+    Decimal coefficients may precede a scale; fractional digits follow . / 点 / 點 / ・.
+    This is not a natural-language parser: no fractions, colloquial elision or financial
+    numerals. Unsupported 兆/京 and malformed runs remain opaque, never a numeric prefix.
+    """
+    raw = token
+    token = token.translate(str.maketrans(dict(zip(_TRANSLATION_CJK_DIGITS, "0012223456789")) |
+                                        {"萬": "万", "億": "亿", "点": ".", "點": ".", "・": "."}))
+    sign = -1 if token.startswith("-") else 1
+    token = token.lstrip("+-")
+
+    def parse(part: str) -> Decimal:
+        for scale, unit in (("亿", 100000000), ("万", 10000), ("千", 1000), ("百", 100), ("十", 10)):
+            if scale not in part:
+                continue
+            if part.count(scale) != 1:
+                raise ValueError("repeated scale")
+            head, tail = part.split(scale)
+            # Small units take a digit coefficient, not another small-unit expression.
+            if unit < 10000 and any(c in head for c in "十百千"):
+                raise ValueError("ascending small units")
+            coefficient, remainder = parse(head or "1"), parse(tail or "0")
+            if remainder >= unit or (tail and coefficient != coefficient.to_integral_value()):
+                raise ValueError("overlapping sections")
+            return coefficient * unit + remainder
+        if not re.fullmatch(r"(?:(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]+)?|\.[0-9]+)", part):
+            raise ValueError("unsupported numeric syntax")
+        return Decimal(part.replace(",", ""))
+
+    try:
+        return format((sign * parse(token)).normalize(), "f")
+    except (ValueError, ArithmeticError):
+        return "unparsed-cjk:" + raw
+
+
+def _translation_numbers(text: str) -> Counter:
+    """Translation-only multiset: retain canonical values and their occurrence counts.
+
+    Reuse the board scanner for commas, percentages and scientific notation. Small
+    written numbers count too; percent's Chinese prefix is a unit, not another 100.
+    Do not tighten the shared evidence/fact-check guards with this translation rule.
+    """
+    # Fold full-width ASCII only: NFKC on the whole line would destroy scientific
+    # superscripts before the board scanner gets to read them.
+    text = "".join(unicodedata.normalize("NFKC", c) if "\uff01" <= c <= "\uff5e" else c
+                   for c in str(text or ""))
+    text = re.sub(r"百分[之点比]", " ", text)
+    text = re.sub(r"唯一|进一步", " ", text)
+    text = re.sub(r"(?<![0-9" + _TRANSLATION_CJK_CHARS + r"])万一", " ", text)
+    text = re.sub(r"(?<![0-9" + _TRANSLATION_CJK_CHARS + r"])千万(?=要|别|別|不要|不可)", " ", text)
+    # Discourse markers and a rate's time unit are not cardinal quantities.
+    text = re.sub(r"(^|[.!?]\s+)(?:first|second|third)(?=\s*[,，:：])", r"\1 ", text, flags=re.I)
+    text = re.sub(r"\bper\s+second\b", "per time unit", text, flags=re.I)
+    scales = {"hundred": 100, "thousand": 1000, "million": 1000000, "billion": 1000000000}
+    text = re.sub(r"\b(" + "|".join(NUMBER_WORDS) + r")\s+(hundred|thousand|million|billion)\b",
+                  lambda m: str(NUMBER_WORDS[m[1].lower()] * scales[m[2].lower()]), text, flags=re.I)
+    # These ordinary words do not assert the number one.
+    text = re.sub(r"(?<![第0-9" + _TRANSLATION_CJK_CHARS + r"])一(?:起|样|些|下|直|般|致|旦)", " ", text)
+    text = re.sub(r"(?<![第0-9" + _TRANSLATION_CJK_CHARS + r"])一定", " ", text)
+    # Bounded lexical contexts for 'sufficient/very', not a blanket 十分 deletion:
+    # 十分間 / 得了十分 / 二十分 still assert quantities. Unlisted ambiguous uses
+    # remain numeric; this scanner does not attempt general CJK word segmentation.
+    text = re.sub(r"(?<![0-9" + _TRANSLATION_CJK_CHARS + r"])十分"
+                  r"(?=です|だ|な|に|で(?:す|ある|は)|有用|重要|必要|清楚|明显|明顯|满意|滿意|困难|困難)", " ", text)
+    text = re.sub(r"(?:负|負|マイナス)(?=[0-9" + _TRANSLATION_CJK_CHARS + r"])", "-", text)
+    text = re.sub(r"(?:正|プラス)(?=[0-9" + _TRANSLATION_CJK_CHARS + r"])", "+", text)
+    text = text.replace("−", "-")
+    values = Counter()
+
+    def cjk_number(match):
+        token = match.group()
+        if not any(c in token for c in _TRANSLATION_CJK_CHARS + "点點・"):
+            return token  # commas, scientific notation and model names stay with the board scanner
+        values[_translation_cjk_value(token)] += 1
+        return " "  # consume the entire value, including any Arabic coefficient
+
+    text = _TRANSLATION_CJK_RUN.sub(cjk_number, text)
+    boards = _optional("boards")
+    if boards is not None:
+        # find_numbers' offsets refer to _prep's normalized text. Retain unary signs
+        # here only; board/fact-check callers keep their existing unsigned semantics.
+        normalized = boards._prep(text)
+        for number in boards.find_numbers(text):
+            prefix = normalized[:number.start].rstrip()
+            negative = prefix.endswith("-") and not re.search(r"(?:[A-Za-z]|[0-9.]\s*)-$", prefix)
+            values[format((-Decimal(number.key)).normalize(), "f") if negative else number.key] += 1
+    else:
+        values.update(key for _, key in _number_tokens(text))
+    values.update(str(NUMBER_WORDS[m.group().lower()]) for m in NUMBER_WORD_RE.finditer(text))
+    values["2"] += len(re.findall(r"\bboth\b", text, re.I))
+    return values
+
+
+def _translation_numbers_equal(source: str, translated: str) -> bool:
+    """Compare quantities, allowing an English article to become a written Chinese classifier.
+
+    'a model' may be 模型 or 一个模型. This allowance cannot hide an explicit added
+    digit 1, a lost source 1/one, or any other added/lost value.
+    """
+    before, after = _translation_numbers(source), _translation_numbers(translated)
+    extra_one = after["1"] - before["1"]
+    if extra_one > 0 and "1" not in {key for _, key in _number_tokens(translated)}:
+        articles = len(re.findall(r"\b(?:a|an)\b", source, re.I))
+        classifiers = len(re.findall(r"一[个個种種名位项項条條台套张張只隻件座本]", translated))
+        if extra_one <= min(articles, classifiers):
+            after["1"] -= extra_one
+    return before == after
 
 
 def _normalized_board(spec):
@@ -5267,8 +5389,15 @@ class StoryboarderV2:
         to fit (the last check's corrections elsewhere ship as the checker wrote them)."""
         rewritten = 0
         names = {c for q in sb.panels for c in q.characters}
+        localized = sb.version >= 3 and language != "en-US"
+        retained = sb.brief.get(f"translation_retained_{language}", {}) if localized else {}
+
+        def kept_original(pid):
+            return pid in retained and _line_at(sb, pid) == retained[pid]
+
         for _ in range(rounds):
-            items = [x for x in self.violations(sb, language) if only is None or int(str(x["id"]).split(".")[0]) in only]
+            items = [x for x in self.violations(sb, language)
+                     if (only is None or int(str(x["id"]).split(".")[0]) in only) and not kept_original(x["id"])]
             if not items:
                 break
             prompt = fit_prompt_v3(items, language) if sb.version >= 3 else fit_prompt(items, language)
@@ -5277,7 +5406,12 @@ class StoryboarderV2:
             by_id = {str(x.get("id")): _text(x.get("text")) for x in _as_list(data.get("items")) if isinstance(x, dict) and _text(x.get("text"))}
             if sb.version >= 3:
                 originals = {f"{p.n}.d{i}": b.text for p in sb.panels for i, b in enumerate(p.dialogue)} | {f"{p.n}.n": p.narration for p in sb.panels}
-                by_id = {k: v for k, v in by_id.items() if k not in originals or _numbers(v) == _numbers(originals[k])}
+                if localized:
+                    requested = {x["id"] for x in items}
+                    by_id = {k: v for k, v in by_id.items() if k in requested and
+                             (k not in originals or _translation_numbers_equal(originals[k], v))}
+                else:
+                    by_id = {k: v for k, v in by_id.items() if k not in originals or _numbers(v) == _numbers(originals[k])}
             for p in sb.panels:
                 for i, b in enumerate(p.dialogue):
                     new = by_id.get(f"{p.n}.d{i}")
@@ -5302,9 +5436,11 @@ class StoryboarderV2:
                         p.labels[i], rewritten = new, rewritten + 1
         # last resort: strip forbidden characters (never truncate)
         for p in sb.panels:
-            for b in p.dialogue:
-                b.text = _plain(b.text)
-            p.narration = _plain(p.narration)
+            for i, b in enumerate(p.dialogue):
+                if not kept_original(f"{p.n}.d{i}"):
+                    b.text = _plain(b.text)
+            if not kept_original(f"{p.n}.n"):
+                p.narration = _plain(p.narration)
             p.labels = [_plain(lab) for lab in p.labels]
         return rewritten
 
@@ -5459,6 +5595,16 @@ class StoryboarderV2:
             return sb
         english = {f"{p.n}.d{i}": b.text for p in sb.panels for i, b in enumerate(p.dialogue)}
         english.update({f"{p.n}.n": p.narration for p in sb.panels if p.narration})
+        retained_key = f"translation_retained_{language}"
+        if not _retry:
+            sb.brief.pop(retained_key, None)
+
+        def retain_originals(panel_numbers):
+            if sb.version >= 3:
+                originals = {pid: text for pid, text in english.items()
+                             if int(pid.split(".")[0]) in panel_numbers and _line_at(sb, pid) == text}
+                sb.brief.setdefault(retained_key, {}).update(originals)
+
         data, usage = await _ask_json(self.translate_engine, "", translate_prompt(sb, language), thinking=False, temperature=0.3, max_tokens=24000, key="panels")
         self._add_usage(usage)
         if _text(data.get("title")) and not _retry:
@@ -5496,12 +5642,9 @@ class StoryboarderV2:
                 rejected.append(p.n)
                 continue
             originals = [b.text for b in p.dialogue] + ([p.narration] if narration is not None else [])
-            dropped = [o for o, x in zip(originals, lines) if not _figures_kept(o, x)]
-            if sb.version >= 3 and dropped:
-                if not _retry:   # a number lost in translation is lost evidence; the re-request usually keeps it
-                    rejected.append(p.n)
-                    continue
-                print(f"[StoryboarderV2] WARNING: panel {p.n}: the translation still drops a number of {dropped[0][:60]!r}")
+            if sb.version >= 3 and any(not _translation_numbers_equal(o, x) for o, x in zip(originals, lines)):
+                rejected.append(p.n)
+                continue
             if _text(t.get("title")):
                 p.title = _text(t["title"])
             if narration:
@@ -5526,8 +5669,16 @@ class StoryboarderV2:
             except Exception as e:  # the re-request is best effort: the first pass is kept
                 _reraise_account(e)
                 print(f"[StoryboarderV2] WARNING: re-request failed ({type(e).__name__}: {e}); panels {rejected} kept their English text")
+                if sb.version >= 3:
+                    retain_originals(rejected)
+                    for n in rejected:
+                        self._skip(f"translation {language} panel {n}", RuntimeError("English text retained: translation retry failed"))
         elif rejected:
             print(f"[StoryboarderV2] WARNING: panels {rejected} kept their English text (translation failed twice)")
+            if sb.version >= 3:
+                retain_originals(rejected)
+                for n in rejected:
+                    self._skip(f"translation {language} panel {n}", ValueError("English text retained after two rejected translations (missing panel, speaker, script or numeric mismatch)"))
         if not _retry:
             await self._translate_leftovers(sb, language)
             await self._fix_translation(sb, language, english)
@@ -5558,14 +5709,20 @@ class StoryboarderV2:
             return 0
         self._add_usage(usage)
         keep, fixed = _latin_keep(sb.brief), []
+        requested = {item["id"] for item in items}
         for item in _as_list(data.get("items")):
             if not isinstance(item, dict):
                 continue
             pid, text = str(item.get("id") or ""), _text(item.get("text"))
             before = _line_at(sb, pid)
-            if not text or pid not in english or not _has_script(text, language, keep) or not _figures_kept(english[pid], text):
+            if sb.version >= 3:
+                # Ignore unsolicited repairs, especially English lines retained after
+                # both panel attempts failed. Repair must obey the same numeric rule.
+                if pid not in requested or not _translation_numbers_equal(english[pid], text):
+                    continue
+            if not text or pid not in english or not _has_script(text, language, keep):
                 continue
-            if _number_keys(text) - _number_keys(english[pid]):   # a correction of the wording never brings a number of its own
+            if sb.version < 3 and (not _figures_kept(english[pid], text) or _number_keys(text) - _number_keys(english[pid])):
                 continue
             if _set_line_at(sb, pid, text):
                 fixed.append({"id": pid, "before": before, "after": text})
