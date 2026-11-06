@@ -1,0 +1,40 @@
+{
+  "first-draft-opus-status.json": {
+    "model_requested": "claude-opus-5-5",
+    "input_sha256": "305f18b085b491040a964e29216cd8024f61383297a3ed84bfa5113423a94cb5",
+    "status": "completed",
+    "models_reported": [
+      "claude-opus-5-5"
+    ],
+    "cost_usd": 0.19224,
+    "elapsed_seconds": 55.9
+  },
+  "opus-rewrite-status.json": {
+    "model_requested": "claude-opus-5-5",
+    "input_sha256": "85774195fe3d881802640f0bde757009203b1036275a6c9fa90570f21d4d8587",
+    "status": "completed",
+    "models_reported": [
+      "claude-opus-5-5"
+    ],
+    "cost_usd": 1.527364,
+    "elapsed_seconds": 417.2
+  },
+  "final-opus-status.json": {
+    "model_requested": "claude-opus-5-5",
+    "status": "completed",
+    "input_sha256": "5773e0f37c196155423b5f645db92a65494121f36b6c92acd454c0a754ba5782",
+    "models_reported": [
+      "claude-opus-5-5"
+    ],
+    "cost_usd": 0.2437032,
+    "elapsed_seconds": 71.6,
+    "validation_status": "needs_revision"
+  },
+  "source_paper_sha256": "79d01a878487a8499e0150ddea2cc975d0baf60d1ae32774de00be0746b3dfac",
+  "native_source_reviewer": "gpt-6-astra",
+  "native_review_report": "astra-chinese-review.md",
+  "final_human_comprehension_test": false,
+  "final_blind_review": "pending_after_editorial_changes",
+  "automatic_pipeline": "interrupted; incomplete; 36 calls started",
+  "final_panels": 37
+}

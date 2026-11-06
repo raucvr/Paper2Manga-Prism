@@ -1,0 +1,15 @@
+{
+  "final_independent_blind_review": "pending_after_final_edits",
+  "changes": [
+    "First question now asks what goes wrong, avoiding an unsupported common-loss premise.",
+    "Separates training memory from the deployment motivation.",
+    "Explains the old teacher-confidence mix versus candidate-specific ratios.",
+    "Removes unused entropy jargon and explains fixing a ratio without gradient terminology.",
+    "Keeps the observed nature of mechanism/score evidence."
+  ],
+  "not_adopted": [
+    "Did not claim all QAT baselines use one KL direction.",
+    "Did not claim Table 4 is the sole evidence; Table 3 and the local diagnostic also exist."
+  ],
+  "human_comprehension_test": false
+}

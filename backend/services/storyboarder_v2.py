@@ -539,6 +539,33 @@ PAPER TEXT:
 {paper.body}"""
 
 
+def _beginner_plan_leaves(brief: dict) -> dict:
+    """Exact mutable string leaves, only for the opted-in novice contract."""
+    plan = brief.get("beginner_plan")
+    if brief.get("reader_contract") != CONTRACT or not isinstance(plan, dict):
+        return {}
+    leaves = {}
+
+    def add(path, parent, key):
+        value = parent[key]
+        if isinstance(value, str) and value.strip():
+            leaves[path] = (parent, key)
+
+    if "goal" in plan:
+        add("beginner_plan.goal", plan, "goal")
+    for field in ("foundations", "opening_questions"):
+        if isinstance(plan.get(field), list):
+            for i in range(len(plan[field])):
+                add(f"beginner_plan.{field}.{i}", plan[field], i)
+    if isinstance(plan.get("steps"), list):
+        for i, step in enumerate(plan["steps"]):
+            if isinstance(step, dict):
+                for field in ("what", "why"):
+                    if field in step:
+                        add(f"beginner_plan.steps.{i}.{field}", step, field)
+    return leaves
+
+
 def _brief_items(brief: dict) -> list[dict]:
     """Every checkable statement of the brief with an id that says where it lives."""
     items = [{"id": key, "text": brief[key]} for key in ("problem", "key_idea", "setup", "takeaway")
@@ -564,14 +591,25 @@ def _brief_items(brief: dict) -> list[dict]:
             items.append({"id": "running_example.from_paper",
                           "text": f"The paper itself shows this one instance ({example.get('source') or 'no place given'}), "
                                   f"not only averages or a pattern over many inputs: {example['text']}"})
+    items += [{"id": pid, "text": parent[key]} for pid, (parent, key) in _beginner_plan_leaves(brief).items()]
     return items
 
 
 def brief_check_prompt(brief: dict, paper: PaperText, items: Optional[list[dict]] = None) -> str:
+    plan_rules = ""
+    if brief.get("reader_contract") == CONTRACT:
+        plan_rules = ("\nFor beginner_plan, check the factual presuppositions of questions as well as statements. "
+                      "Keep goal as a concrete task or research aim, never turn an aim into a measured achievement. "
+                      "Correct opening_questions as plain questions, with no unexplained abbreviations or results. "
+                      "Do not presuppose perfect reference answers, inevitable failure, complete recovery, or speedups "
+                      "unless the paper supports them. The quote field is source evidence, not replacement text: "
+                      "corrected must preserve the leaf's role (question, goal, foundation, step, or reason). "
+                      "Use DELETE if a supported question or statement cannot be supplied. "
+                      "Return only exact item ids supplied in this request; never modify sibling fields.\n")
     return f"""You verify the BRIEF of a research paper before it is turned into a manga; every later step trusts it.
 For EVERY item below, find the sentence, table or figure of the PAPER that supports it. An item passes only if the paper supports it with the same numbers, the same setting (model size, single model or ensemble, dataset, split, which variant) and the same strength and scope. Flag items that are unsupported, overstated (all, first, only, best, always, completely), misattributed or wrong, and limitations the authors do not state.
 For each flagged item give "corrected": the item rewritten so the paper supports it (same role, roughly the same length), or "DELETE" when nothing in the paper supports it.
-Output JSON only: {{"problems": [{{"id": "...", "issue": "...", "quote": "the paper's own words", "corrected": "..."}}]}} — an empty list when everything is supported.
+{plan_rules}Output JSON only: {{"problems": [{{"id": "...", "issue": "...", "quote": "the paper's own words", "corrected": "..."}}]}} — an empty list when everything is supported.
 
 ITEMS:
 {json.dumps(_brief_items(brief) if items is None else items, ensure_ascii=False)}
@@ -1418,7 +1456,7 @@ def brief_prompt_v3(paper: PaperText, abstract: str) -> str:
                                   "contributions and results in the introduction and conclusion, quoting those sentences)")
     return f"""Read the paper and its ABSTRACT and write a compact, faithful BRIEF for a manga adaptation. A newcomer must understand the task, problem, method and why its steps help; the story must also preserve the abstract's facts, numbers and conditions.
 
-Plan for a novice: enough foundations for the concrete goal and problem, then mechanism steps and why each helps before terminology and data. The opening lists 2-3 plain reader questions; detailed claims and exact evidence are taught later across successive panels.
+Plan for a novice: enough foundations for the concrete goal and problem, then mechanism steps and why each helps before terminology and data. State the goal as an everyday task with a concrete input and desired output, in words a newcomer understands; distinguish a research aim from a measured achievement. The opening lists 2-3 plain reader questions: no unexplained abbreviations, result numbers, or asserted results. Questions must not presuppose perfect reference answers, inevitable failures, complete recovery, or speedups unsupported by the paper. Foundations explain only necessary concepts, without inventing benefits or guarantees. Each step's why must give a paper-supported reason, not a stronger causal claim. Detailed claims and exact evidence are taught later across successive panels.
 
 Rules: every statement must come from the paper; copy exact numbers, dataset names, baselines and units; if something is unclear say "unclear" instead of guessing.
 
@@ -1594,6 +1632,11 @@ background -> concrete problem -> mechanism steps and why EACH helps -> terms an
 when needed -> limits -> answers to the opening questions. Use existing problem/idea/how beats
 for foundations; no new beat is required. Introduce at most one new concept per panel, explain
 its purpose before naming it. The opening claims list is QUESTIONS, never a dense claims board.
+For each mechanism, make the participants and their roles visible before using shorthand names.
+Show what input each step receives, where its target or feedback comes from, what changes and
+why that change helps. Carry the same supported example across these steps; a method name or
+an arrow alone is not an explanation. Put this reasoning in visible words or actual board labels,
+never only in visual directions, hidden notes or an unwritten diagram request.
 Keep every factual detail, qualifier, comparison and exact number across the whole story.
 One claim may span successive teaching panels; keep its id on each. Never restuff a complete
 claim into one panel or into the opening questions to satisfy coverage, a quiz or a budget.
@@ -5266,6 +5309,7 @@ class StoryboarderV2:
         the brief otherwise reach the panels, the details and the card. A checker of its own reads the items in parallel
         parts (as the fact-check does). Returns the number of fixes (best effort)."""
         items = _brief_items(brief)
+        plan_leaves = _beginner_plan_leaves(brief)
         size = FACTCHECK_CHUNK // 2 if self.check_engine is not self.text_engine else max(1, len(items))
         parts = [items[i:i + size] for i in range(0, len(items), size)] or [[]]
         if len(parts) > 1:
@@ -5284,11 +5328,15 @@ class StoryboarderV2:
         if failed:
             self._skip(f"brief check, {len(failed)} of {len(results)} parts", failed[0])
         data = {"problems": []}
-        for result in results:
+        for part, result in zip(parts, results):
             if not isinstance(result, BaseException):
                 part_data, usage = result
                 self._add_usage(usage)
-                data["problems"] += _as_list(part_data.get("problems"))
+                allowed = {entry["id"] for entry in part}
+                data["problems"] += [finding for finding in _as_list(part_data.get("problems"))
+                                     if not isinstance(finding, dict)
+                                     or not str(finding.get("id") or "").strip().startswith("beginner_plan")
+                                     or str(finding.get("id") or "").strip() in allowed]
         fixes, drop = [], {}
         points = {pt["id"]: pt for pt in _as_list(brief.get("points")) if isinstance(pt, dict)
                   for pt in [{**pt, "id": str(pt.get("id") or "").strip()}]}
@@ -5300,7 +5348,27 @@ class StoryboarderV2:
                 continue
             delete = corrected.upper().strip(".") == "DELETE"
             parts = pid.split(".")
-            if parts[0] in ("problem", "key_idea", "setup", "takeaway") and len(parts) == 1 and isinstance(brief.get(pid), str):
+            if parts[0] == "beginner_plan":
+                if pid not in plan_leaves:
+                    continue
+                parent, key = plan_leaves[pid]
+                if isinstance(parent, dict) and key not in parent:
+                    continue
+                if parts[1] == "opening_questions" and not delete:
+                    corrected = corrected.strip('"“”').strip()
+                    # A declarative source quotation cannot replace a reader question. Drop this
+                    # flagged leaf rather than send either the bad original or a changed role onward.
+                    if not corrected.endswith(("?", "？")):
+                        delete = True
+                fixes.append({"id": pid, "before": parent[key], "after": "" if delete else corrected})
+                if delete:
+                    if isinstance(parent, dict):
+                        del parent[key]
+                    else:
+                        drop.setdefault(".".join(parts[:2]), set()).add(key)
+                else:
+                    parent[key] = corrected
+            elif parts[0] in ("problem", "key_idea", "setup", "takeaway") and len(parts) == 1 and isinstance(brief.get(pid), str):
                 fixes.append({"id": pid, "before": brief[pid], "after": "" if delete else corrected})
                 brief[pid] = "" if delete else corrected
             elif parts[0] in ("contributions", "limitations") and len(parts) == 2 and parts[1].isdigit():
@@ -5358,7 +5426,11 @@ class StoryboarderV2:
                             pairs[i] = (text.strip(), role.strip())
                             example["parts"], example["roles"] = [t for t, _ in pairs], [r for _, r in pairs]
         for key, gone in drop.items():
-            if key == "points":
+            if key.startswith("beginner_plan."):
+                field = key.split(".")[1]
+                values = brief["beginner_plan"][field]
+                brief["beginner_plan"][field] = [value for i, value in enumerate(values) if i not in gone]
+            elif key == "points":
                 brief["points"] = [pt for pt in _as_list(brief.get("points")) if not (isinstance(pt, dict) and str(pt.get("id") or "").strip() in gone)]
             elif key == "running_example.parts":
                 example = brief["running_example"]

@@ -1,0 +1,1644 @@
+{
+  "title": "压小以后还会解题吗？",
+  "summary": "OnQ先校准量化模型，再让它自己生成回答，向原始模型学习怎样续写，并根据各候选的概率差异调整训练。下面逐步解释机制、结果及限制。",
+  "panels": [
+    {
+      "n": 1,
+      "chapter": "开场",
+      "title": "想把会解题的模型装进小内存",
+      "kind": "scene",
+      "narration": "情境示意：小云想在内存不大的机器上运行一个会一步步解题的语言模型。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "这个模型解题很厉害，可它太大了，我的机器装不下。"
+        },
+        {
+          "speaker": "papi",
+          "text": "那就得想办法让它少占内存，同时尽量别把解题能力弄丢。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "变小不难，难的是变小以后还会不会解题。"
+        }
+      ],
+      "board": null,
+      "visual": "Kumo hugging an oversized glowing brain-shaped crate that will not fit into a tiny backpack; Papi kneeling beside it measuring with a paw; Nezu watching skeptically from a stool.",
+      "beat": "hook",
+      "claims": [],
+      "source_evidence": "§1: \"Low-bit quantization reduces the memory footprint of large language models (LLMs), making their deployment more practical\"; \"Preserving reasoning capabilities at low precision remains challenging\".",
+      "characters": [
+        "kumo",
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 2,
+      "chapter": "开场",
+      "title": "量化：权重一个不少，只是记得更粗",
+      "kind": "board",
+      "narration": "模型里有大量叫“权重”的数字。量化不靠删掉这些数字来省内存，而是把参与量化的权重记得更粗。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "量化不是删掉一部分权重。权重个数没变，只是参与量化的数用更少的刻度表示。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "就像原来能精确到很多位小数，现在只能在几个刻度里挑一个？"
+        },
+        {
+          "speaker": "nezu",
+          "text": "刻度越少越省地方，也越容易失真。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "同一个模型，存法不同",
+        "left": {
+          "label": "原始模型",
+          "items": [
+            "每个权重用16位存",
+            "数值可以记得很细"
+          ]
+        },
+        "right": {
+          "label": "量化后的模型",
+          "items": [
+            "权重个数和原来一样",
+            "参与量化的权重用2或3位：4或8个刻度",
+            "占用的内存随之变小"
+          ]
+        },
+        "source": "论文第3.1节公式1；第4节"
+      },
+      "visual": "Papi at a whiteboard beside two identical rows of marbles: one row in many fine color shades, the other in only four coarse shades; Kumo comparing them closely.",
+      "beat": "foundation",
+      "claims": [],
+      "source_evidence": "§3.1 Eq.1: \"A full-precision latent weight w is mapped to an N-bit code wint … clamp(⌊w/s⌉ + z, 0, 2^N − 1)\"; §4: \"at 2- and 3-bit weight precision (W2 and W3)… BF16\"; Table 1: Full precision \"16/16\".",
+      "characters": [
+        "papi",
+        "kumo",
+        "nezu"
+      ]
+    },
+    {
+      "n": 3,
+      "chapter": "开场",
+      "title": "压得太狠，长题写不完",
+      "kind": "scene",
+      "narration": "论文观察到：即使压缩后再做补救训练，低位模型遇到需要长推理的题目时仍常常吃力。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "论文里的结果显示：在需要长推理的题上，有的压缩模型会一直写到长度上限，还没收尾。"
+        },
+        {
+          "speaker": "papi",
+          "text": "这种长度上限原本足够完整模型完成回答，却常常不够这些压缩模型用。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "所以麻烦不只是答错，还有停不下来。"
+        }
+      ],
+      "board": null,
+      "visual": "Kumo staring at an endlessly unrolling paper scroll spilling off a desk onto the floor; Papi holding a short, neatly finished scroll for contrast; Nezu frowning.",
+      "beat": "hook",
+      "claims": [
+        2
+      ],
+      "source_evidence": "Abstract: \"the resulting low-bit quantized models still struggle on long-horizon reasoning tasks and often fail to terminate within a token budget that suffices for the full-precision model\"; §1 Fig.1b.",
+      "characters": [
+        "kumo",
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 4,
+      "chapter": "开场",
+      "title": "先写下要弄清的三件事",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "先把要弄清的事写下来，最后再一条条回答。"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "我们的问题",
+        "items": [
+          "压缩后的模型，推理时哪里出了问题？",
+          "新方法怎么训练，学生跟谁学？",
+          "效果到底有多大，还差在哪里？"
+        ],
+        "open": true,
+        "checked": []
+      },
+      "visual": "Kumo standing on tiptoe writing on a whiteboard with a big marker; Papi and Nezu seated, attentive.",
+      "beat": "questions",
+      "claims": [],
+      "source_evidence": "Abstract: \"We identify two challenges in closing this gap… We present OnQ…\"（问题按论文摘要的结构设置）",
+      "characters": [
+        "kumo"
+      ]
+    },
+    {
+      "n": 5,
+      "chapter": "基础",
+      "title": "写答案就是不断接下一个片段",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "语言模型写答案时，一次只接一个小片段。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "那一段长推理，岂不是要接成千上万次？"
+        },
+        {
+          "speaker": "papi",
+          "text": "对。论文里很多回答都有几千甚至上万个片段。"
+        }
+      ],
+      "board": {
+        "kind": "flow",
+        "title": "模型怎样写出一段回答",
+        "steps": [
+          "读题目和目前已经写出的内容",
+          "挑出下一个文字片段，接到末尾",
+          "回到第一步，直到写完或碰到长度上限"
+        ],
+        "source": "论文第3.2节、第4节",
+        "note": "一个文字片段可以是一个词、半个词或一个标点，论文里叫token。"
+      },
+      "visual": "Papi placing small tiles one by one at the end of a long tile path on the floor; Kumo following the path with wide eyes as it stretches into the distance.",
+      "beat": "foundation",
+      "claims": [],
+      "source_evidence": "§3.2: \"the student samples a response y through its quantized forward pass. The teacher supplies next-token distributions at each generated prefix ht = (x, y<t)\"; Figure 4 x-axis \"Mean generated tokens\" spans about 4K–28K.",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 6,
+      "chapter": "基础",
+      "title": "前缀：已经写出的那一段",
+      "kind": "scene",
+      "narration": "题目加上到目前为止写出的全部内容，叫“前缀”。下一步怎么接，取决于前缀。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "每接一个片段，都要依据题目和已经写出的内容。这一整段就叫前缀。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "每接一次，前缀就长一点。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "那越往后，前缀里模型自己写的东西就越多。"
+        }
+      ],
+      "board": null,
+      "visual": "Kumo walking along the tile path while looking back over its shoulder at all the tiles behind it; Nezu pointing at how long the trail behind has become.",
+      "beat": "foundation",
+      "claims": [],
+      "source_evidence": "§3.2: \"at each generated prefix ht = (x, y<t)\"; §1: \"the longer the response, the more the student conditions on its own outputs\".",
+      "characters": [
+        "papi",
+        "kumo",
+        "nezu"
+      ]
+    },
+    {
+      "n": 7,
+      "chapter": "基础",
+      "title": "下一步：每个候选都有一个概率",
+      "kind": "scene",
+      "narration": "面对同一个前缀，模型给每个可能的下一片段各打一个概率。这一整组概率叫“概率分布”。模型按这组概率抽出一个片段接上。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "所以模型不是只想到一个词？"
+        },
+        {
+          "speaker": "papi",
+          "text": "它心里有一整张表：这个片段可能性多大，那个片段可能性多大，全部加起来是百分之百。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "既然是按概率抽，同一个前缀后面也可能接出不同的片段。"
+        }
+      ],
+      "board": null,
+      "visual": "Papi holding a fan of several cards of different sizes, each card a candidate next tile; Kumo about to draw one; Nezu watching the draw closely.",
+      "beat": "foundation",
+      "claims": [],
+      "source_evidence": "§3.2: \"let pv = P(v | h) and qv = Qθ(v | h) denote the teacher and student probabilities of candidate v\"; App A.2: \"samples one response for each of 128 prompts at temperature 1.0\".",
+      "characters": [
+        "kumo",
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 8,
+      "chapter": "基础",
+      "title": "老师和学生",
+      "kind": "board",
+      "narration": "训练时仍保留更精细的权重供更新；计算下一步时，才使用量化后的权重。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "补救训练里有两个角色：没压缩的原模型当老师，压缩后的模型当学生。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "老师也要改吗？"
+        },
+        {
+          "speaker": "papi",
+          "text": "老师不改，只调整学生。"
+        },
+        {
+          "speaker": "papi",
+          "text": "更细的权重方便训练时微调，再按粗刻度参与计算。省内存说的是量化后的使用目标，不是说训练本身也只占这么点内存。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "谁是老师，谁是学生",
+        "left": {
+          "label": "老师：原始完整模型",
+          "items": [
+            "每个权重仍用16位存",
+            "训练中保持不变",
+            "负责给出参考概率"
+          ]
+        },
+        "right": {
+          "label": "学生：量化后的模型",
+          "items": [
+            "前向计算用2或3位的权重",
+            "训练时保留更细的权重来更新",
+            "学习老师的参考概率"
+          ]
+        },
+        "source": "论文第3.2节、第4节"
+      },
+      "visual": "Papi points to two identical-size model structures with the same arrangement of weights. One uses finely marked scales and the other coarse scales. Kumo and Nezu compare them. No letters, labels or numbers in the artwork.",
+      "beat": "foundation",
+      "claims": [],
+      "source_evidence": "§3.2: \"Let Qθ be the quantized student with trainable θ … and P the frozen full-precision teacher\"; §4: \"Each student is supervised by its original BF16 counterpart.\"",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 9,
+      "chapter": "卡在哪里",
+      "title": "现有做法：沿着写好的固定回答训练",
+      "kind": "board",
+      "narration": "训练时把量化带来的变化也考虑进去，叫量化感知训练（QAT）。这里比较的常见做法，用一批预先写好的回答来训练。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "听起来挺合理啊，问题出在哪？"
+        },
+        {
+          "speaker": "papi",
+          "text": "问题就出在前缀是从哪来的。看下一格。"
+        }
+      ],
+      "board": {
+        "kind": "flow",
+        "title": "常见的QAT训练",
+        "steps": [
+          "准备一批写好的题目和回答",
+          "沿着固定回答的每个前缀，老师给出下一片段的概率",
+          "调整学生，让它的概率贴近老师"
+        ],
+        "source": "论文摘要；第2节；附录A.5",
+        "note": "整个过程中，前缀都来自固定回答，而不是学生自己写出来的。"
+      },
+      "visual": "Papi pointing along a single straight railroad track laid out in advance; a small student figure being pushed along that fixed track.",
+      "beat": "problem",
+      "claims": [
+        0,
+        1
+      ],
+      "source_evidence": "Abstract: \"Existing recipes typically supervise the quantized student with the original full-precision model on fixed response sequences.\"; App A.5: \"The three QAT baselines use the 32,768 single-turn question–response pairs\".",
+      "characters": [
+        "nezu",
+        "papi"
+      ]
+    },
+    {
+      "n": 10,
+      "chapter": "卡在哪里",
+      "title": "同一个位置，两种接法",
+      "kind": "board",
+      "narration": "这是论文用来说明机制的示意图，不是某道题的实测解题记录。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "前半段一模一样。到了接“So”的地方，学生写的是“Wait”。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "从这里开始，两段文字就分开了。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "一处分叉（论文图2示意）",
+        "left": {
+          "label": "固定回答里写的",
+          "items": [
+            "… not the case . So …",
+            "意思：……并非如此。所以……",
+            "接着往下推"
+          ]
+        },
+        "right": {
+          "label": "学生自己写的",
+          "items": [
+            "… not the case . Wait , the problem says …",
+            "意思：……并非如此。等等，题目说……",
+            "停下来回头看题目"
+          ]
+        },
+        "source": "论文图2（左）"
+      },
+      "visual": "A path of stepping stones that splits into two branches at one stone; Kumo standing exactly at the fork, one branch leading straight ahead, the other curving back toward a signpost.",
+      "beat": "problem",
+      "claims": [
+        4
+      ],
+      "source_evidence": "Figure 2 (left): fixed trajectory \"… not the case . So …\"; \"Quantized model's continuation\" \"Wait , the problem says\"; on-policy row \"… not the case . Wait , the problem says …\".",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 11,
+      "chapter": "卡在哪里",
+      "title": "分叉不一定错，但原来的训练可能没覆盖",
+      "kind": "scene",
+      "narration": "训练时见到的前缀，和学生真正写答案时遇到的前缀，对不上。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "写成“Wait”就算错了吗？"
+        },
+        {
+          "speaker": "papi",
+          "text": "不一定。回头再看一眼题目，也可能是合理的做法。"
+        },
+        {
+          "speaker": "papi",
+          "text": "关键是：如果只沿着图中那条固定回答训练，就没有在“... Wait , the problem says”这条新前缀上指导学生。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "也就是说，平时练到的内容，可能覆盖不到它自己真正写出来的内容。"
+        }
+      ],
+      "board": null,
+      "visual": "Kumo walking down the curved branch path, finding it unlit with no guide posts, while the straight branch behind is lined with lanterns; Nezu and Papi watching from the fork.",
+      "beat": "problem",
+      "claims": [
+        4
+      ],
+      "source_evidence": "Abstract: \"fixed-response supervision leaves a mismatch between training prefixes and those encountered during student generation\"; §1: \"Fixed-response distillation supervises only reference prefixes\".",
+      "characters": [
+        "nezu",
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 12,
+      "chapter": "卡在哪里",
+      "title": "回答越长，偏得越远",
+      "kind": "scene",
+      "narration": "论文把这种越写越偏的现象叫“轨迹偏离”。这是第一个难点。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "学生接出不同的片段，后面面对的内容也随之改变。论文发现，回答越长，训练内容与实际生成内容的偏离就越严重。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "有证据吗？"
+        },
+        {
+          "speaker": "papi",
+          "text": "论文按完整模型回答的长短把题目分组。在完整模型要写很长的那些题上，用固定回答训练的方法恢复的准确率很少，也常常写到长度上限。"
+        }
+      ],
+      "board": null,
+      "visual": "Two paths diverging further and further apart as they stretch toward the horizon; Papi tracing the widening gap with a long pointer; Nezu squinting at the distance.",
+      "beat": "problem",
+      "claims": [
+        2,
+        3,
+        4
+      ],
+      "source_evidence": "§1: \"the longer the response, the more the student conditions on its own outputs and the further its context drifts from those prefixes\"; \"QAT baselines recover little of the full-precision model's accuracy on questions eliciting long full-precision responses … They also frequently reach the token limit\" (Fig.1a–b).",
+      "characters": [
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 13,
+      "chapter": "卡在哪里",
+      "title": "第二个难点：老师和学生看好的不一样",
+      "kind": "board",
+      "narration": "论文比较了学生自己写出的一个前缀。图中能看出：老师和学生对下一步的偏好很不一样。这个前缀的具体原文没有给出。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "这是论文从学生写的回答里取的一个前缀。老师最看好“a”，学生却把它排得很靠后；学生最看好“some”，老师只把它排第三。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "有的给少了，有的给多了，还是同时发生？"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "同一个前缀，两边的排序不同（论文图3a）",
+        "left": {
+          "label": "老师更看好",
+          "items": [
+            "“a”：老师排第一，学生排第四",
+            "“two”：老师排第二"
+          ]
+        },
+        "right": {
+          "label": "学生更看好",
+          "items": [
+            "“some”：学生排第一，老师排第三",
+            "“others”：学生排第二，老师排第四"
+          ]
+        },
+        "source": "论文图3a（只看排序，不读具体概率值）"
+      },
+      "visual": "Two judges holding up ranked placards side by side: the teacher figure's top placard and the student figure's top placard are clearly different shapes; Nezu looking back and forth between them.",
+      "beat": "problem",
+      "claims": [
+        5
+      ],
+      "source_evidence": "§3.2: \"The calibrated student exhibits two-sided probability errors: it underpredicts some candidates and overpredicts others at the same prefix (Figure 3.a)\"; Fig.3a: teacher order a, two, some, others; student order some, others, two, a.",
+      "characters": [
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 14,
+      "chapter": "卡在哪里",
+      "title": "低估、高估，和“拿不准”",
+      "kind": "scene",
+      "narration": "比较同一个候选的概率：老师给得多、学生给得少，叫“低估”；反过来叫“高估”。只是比较两张榜里的名次，还不能判断概率究竟差多少。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "论文直接比较了两边的概率，发现同一个前缀里，低估和高估常常同时出现。这叫“分布错位”。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "什么时候最常见？"
+        },
+        {
+          "speaker": "papi",
+          "text": "在学生拿不准、把概率分散给许多候选的前缀上，这种情况更常见。"
+        }
+      ],
+      "board": null,
+      "visual": "A balance scale tipping one way on the left pan and the other way on the right pan at the same time; Kumo puzzled, Papi gesturing at a foggy cloud above the student figure to suggest uncertainty.",
+      "beat": "problem",
+      "claims": [
+        5
+      ],
+      "source_evidence": "Abstract: \"this distributional misalignment becomes more frequent at high-entropy prefixes\"; App A.4: \"We count it only if the two probabilities differ by at least 0.05 and by a factor of at least 2\".",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 15,
+      "chapter": "卡在哪里",
+      "title": "重复写个没完：这是观察，不是已证的因果",
+      "kind": "scene",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "所以学生只要高估了某个词，就会一直重复、停不下来？"
+        },
+        {
+          "speaker": "nezu",
+          "text": "这话说得太满了。"
+        },
+        {
+          "speaker": "papi",
+          "text": "论文观察到两件事：压缩后的模型常把同一句或同一步计算反复地写；学生在两个方向上都有概率错误。可它没有证明“某个词的概率过高就导致循环”这条完整的因果链。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "明白了。反复重复是看到的失败现象，概率错位是另一项观察。"
+        }
+      ],
+      "board": null,
+      "visual": "Nezu holding up a paw like a stop sign; Papi pinning two separate notes on a corkboard with no string connecting them; Kumo nodding.",
+      "beat": "problem",
+      "claims": [],
+      "source_evidence": "§6.1: \"repetitive errors, in which responses emit the same sentence, block, or computation again and again\"; \"these errors become much more frequent after quantization\"; §1: \"Prior work also finds that quantized models oversample overthinking markers at high-entropy positions.\"",
+      "characters": [
+        "kumo",
+        "nezu",
+        "papi"
+      ]
+    },
+    {
+      "n": 16,
+      "chapter": "新方法",
+      "title": "OnQ的路线图",
+      "kind": "board",
+      "narration": "论文的新流程叫OnQ，分别对付前面的两个难点。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "先讲第一步，后面两步再一步步讲。"
+        }
+      ],
+      "board": {
+        "kind": "flow",
+        "title": "OnQ的三步",
+        "steps": [
+          "先校准：逐块把学生调得接近老师，作为起点",
+          "学生自己写回答，老师在同样的前缀上给出概率",
+          "用“动态KL”把学生的概率往老师那边拉"
+        ],
+        "source": "论文第3节；图2",
+        "note": "第2、3步反复进行。第2步对付前缀对不上，第3步对付两个方向的概率错误。"
+      },
+      "visual": "Papi unrolling a three-stop map on the table; Kumo and Nezu leaning over it.",
+      "beat": "method",
+      "claims": [
+        6,
+        7
+      ],
+      "source_evidence": "§3: \"Block-wise calibration provides the initialization for on-policy training… this on-policy supervision addresses trajectory divergence. To address distributional misalignment, we align the student … using candidate-wise Dynamic KL\".",
+      "characters": [
+        "papi"
+      ]
+    },
+    {
+      "n": 17,
+      "chapter": "新方法",
+      "title": "第一步：逐块校准，给训练一个起点",
+      "kind": "scene",
+      "narration": "模型由许多“块”依次叠成，前一块的输出就是后一块的输入。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "校准时从前往后一块一块调：让学生每一块的输出，尽量接近完整模型里对应那一块的输出。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "校准完就够了吗？"
+        },
+        {
+          "speaker": "papi",
+          "text": "先恢复一些已经丢掉的能力，再让学生自己生成训练材料。例如1.7B、2位模型在MATH-500上，直接量化得2.40%，校准后得25.60%（表2，均为一组随机设置）。但校准后在长题上仍吃力。"
+        }
+      ],
+      "board": null,
+      "visual": "Papi adjusting a tall stack of building blocks one level at a time from bottom to top, comparing each to a matching reference stack beside it; Kumo holding the next block.",
+      "beat": "method",
+      "claims": [
+        7
+      ],
+      "source_evidence": "§3.1 Eq.2: \"we train each transformer block fl in sequence on the calibration set C … with a block-wise reconstruction loss\"; \"This calibrated checkpoint provides the starting policy for on-policy distillation\"; §6.2: \"Calibration provides one but still struggles on long-horizon reasoning at 2 bits\".",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 18,
+      "chapter": "新方法",
+      "title": "第二步：在学生自己写的前缀上请教老师",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "这样一来，学生真正会走到的岔路，比如从“Wait”往下的那条，也能得到老师的指导。"
+        },
+        {
+          "speaker": "papi",
+          "text": "论文把这种跟着学生当前输出来学习老师概率的训练，称为on-policy蒸馏。"
+        }
+      ],
+      "board": {
+        "kind": "flow",
+        "title": "自己写，老师接着指导",
+        "steps": [
+          "学生自己写出整段回答",
+          "把每个位置的前缀交给老师",
+          "老师给出下一片段的参考概率"
+        ],
+        "source": "论文第3.2节；图2（左）",
+        "note": "更新学生后，再写新的回答，重复训练。"
+      },
+      "visual": "Kumo-like student figure writing on a long scroll; at each mark on the scroll, the calm teacher figure leans over the same spot and holds up a small fan of cards.",
+      "beat": "method",
+      "claims": [
+        6,
+        7
+      ],
+      "source_evidence": "§3.2: \"The teacher supplies next-token distributions at each generated prefix ht = (x, y<t), including prefixes containing earlier student errors\"; \"The updated student then generates fresh responses, keeping teacher supervision aligned with the prefixes visited by its evolving quantized policy.\"",
+      "characters": [
+        "papi"
+      ]
+    },
+    {
+      "n": 19,
+      "chapter": "新方法",
+      "title": "学生的回答不是标准答案",
+      "kind": "scene",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "等一下，学生自己写的回答，被当成标准答案了？"
+        },
+        {
+          "speaker": "papi",
+          "text": "不是。学生的文字只决定在哪个前缀上提问；下一步该怎么接，看的是老师给出的概率。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "要是前面已经写错了呢？"
+        },
+        {
+          "speaker": "papi",
+          "text": "老师照样读这段带错的前缀，告诉学生自己会怎么接。这能给学生指导，但不保证一定能把答案救回来。"
+        }
+      ],
+      "board": null,
+      "visual": "Nezu holding up a crumpled draft with a question mark expression; Papi gently pointing away from the draft toward the teacher figure's fan of cards.",
+      "beat": "method",
+      "claims": [
+        7
+      ],
+      "source_evidence": "§3.2: \"The teacher supplies next-token distributions at each generated prefix … including prefixes containing earlier student errors (Agarwal et al., 2024)\"; Eq.4 minimizes Dynamic KL between teacher and student distributions at prefixes hi,t.",
+      "characters": [
+        "nezu",
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 20,
+      "chapter": "新方法",
+      "title": "先要一把尺子：KL",
+      "kind": "scene",
+      "narration": "要让学生贴近老师，需要衡量两组概率有多不同。KL散度就是一种衡量方式；两组概率完全相同时，它为0。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "要把学生拉向老师，总得先知道差了多少吧？"
+        },
+        {
+          "speaker": "papi",
+          "text": "对。常用的尺子叫KL。不过这把尺子有两种量法，量出来的结果不一样。"
+        }
+      ],
+      "board": null,
+      "visual": "Papi holding up a long measuring tape stretched between two bar-shaped stacks of blocks of different heights; Kumo reading the tape.",
+      "beat": "method",
+      "claims": [
+        8
+      ],
+      "source_evidence": "§1: \"Neither Kullback–Leibler (KL) direction alone corrects both sides equally well\"; §3.2 Eq.3 (Forward KL and Reverse KL terms).",
+      "characters": [
+        "kumo",
+        "papi"
+      ]
+    },
+    {
+      "n": 21,
+      "chapter": "新方法",
+      "title": "两种量法的直觉",
+      "kind": "scene",
+      "narration": "这是从两种量法的公式得出的直觉。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "一种量法站在老师那边：老师很看好、学生却给得很少的候选，算作大差距。"
+        },
+        {
+          "speaker": "papi",
+          "text": "另一种站在学生那边：学生押了很多、老师却不看好的候选，算作大差距。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "所以一种更在意“给少了”，另一种更在意“给多了”？"
+        },
+        {
+          "speaker": "nezu",
+          "text": "是“更在意”，可不是“只管这一种”。"
+        }
+      ],
+      "board": null,
+      "visual": "Papi standing first behind the teacher figure, then behind the student figure, looking through the same measuring tape from each side; Nezu raising a cautionary finger.",
+      "beat": "method",
+      "claims": [
+        8
+      ],
+      "source_evidence": "§3.2 Eq.3: \"αv pv log(pv/qv) [Forward KL] + (1 − αv) qv log(qv/pv) [Reverse KL]\" — the forward term is weighted by teacher probability pv, the reverse term by student probability qv.",
+      "characters": [
+        "papi",
+        "kumo",
+        "nezu"
+      ]
+    },
+    {
+      "n": 22,
+      "chapter": "新方法",
+      "title": "两种量法的名字和论文的观察",
+      "kind": "board",
+      "narration": "这些观察来自对学生只做一小步更新的局部检查，并不是说一种量法只会调高、另一种只会调低。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "两边各有长处，那能不能两个一起用？"
+        },
+        {
+          "speaker": "papi",
+          "text": "这正是动态KL的想法。"
+        },
+        {
+          "speaker": "papi",
+          "text": "旧方法BitDistiller会先根据老师的把握程度设混合比例；OnQ则对每个候选，比较老师和学生的概率来决定比例。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "前向KL与反向KL",
+        "left": {
+          "label": "前向KL（FKL）：按老师的概率加权",
+          "items": [
+            "对“老师多、学生少”的候选罚得重",
+            "论文观察：更能把严重低估的候选拉向老师"
+          ]
+        },
+        "right": {
+          "label": "反向KL（RKL）：按学生的概率加权",
+          "items": [
+            "对“学生多、老师少”的候选罚得重",
+            "论文观察：更能把严重高估的候选拉向老师"
+          ]
+        },
+        "source": "论文第1节、第3.2节；图3b"
+      },
+      "visual": "Two measuring tools laid side by side on a workbench, one with a warm orange handle and one with a green handle; Kumo picking up both at once.",
+      "beat": "method",
+      "claims": [
+        8
+      ],
+      "source_evidence": "§3.2: \"Under local logit updates, FKL moves a larger fraction of severely underpredicted candidates (pv/qv ≥ 20) toward the teacher, whereas RKL moves a larger fraction of severely overpredicted candidates (qv/pv ≥ 20)\".",
+      "characters": [
+        "kumo",
+        "papi"
+      ]
+    },
+    {
+      "n": 23,
+      "chapter": "新方法",
+      "title": "动态KL：每个候选单独定比例",
+      "kind": "board",
+      "narration": "动态KL不是一把全新的尺子，而是对每个候选，把两种量法按比例混在一起。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "对每个候选，先看老师和学生谁给的概率高。"
+        },
+        {
+          "speaker": "papi",
+          "text": "老师给得高，就多用前向KL；学生给得高，就多用反向KL；两边一样，就各占一半。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "按每个候选的情况混合",
+        "left": {
+          "label": "老师的概率 > 学生（给少了）",
+          "items": [
+            "前向KL占的比重超过一半"
+          ]
+        },
+        "right": {
+          "label": "学生的概率 > 老师（给多了）",
+          "items": [
+            "反向KL占的比重超过一半"
+          ]
+        },
+        "source": "论文第3.2节公式3；图2（右）"
+      },
+      "visual": "Papi at a mixing desk with one slider per candidate tile, each slider pushed a different amount toward an orange side or a green side.",
+      "beat": "method",
+      "claims": [
+        8
+      ],
+      "source_evidence": "§3.2: \"Underprediction (pv > qv): αv > 1/2 gives greater weight to FKL. Overprediction (qv > pv): αv < 1/2 gives greater weight to RKL.\"; Fig.2 right: \"Full-Precision higher: more FKL / Quantized higher: more RKL\".",
+      "characters": [
+        "papi"
+      ]
+    },
+    {
+      "n": 24,
+      "chapter": "新方法",
+      "title": "“动态”动在哪里",
+      "kind": "scene",
+      "narration": "前向KL所占的比例 = 老师的概率 ÷（老师的概率 + 学生的概率），剩下的归反向KL。先按这个比例安排本次调整；下一轮再重新算比例。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "“动态”是指什么？"
+        },
+        {
+          "speaker": "papi",
+          "text": "每个前缀、每个候选，都用当下老师和学生的概率重新算一次比例。学生一变，比例也跟着变。"
+        },
+        {
+          "speaker": "papi",
+          "text": "举个假设的比例：如果老师给的概率是学生的2倍，前向KL就占三分之二。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "这只是在决定往哪边多用力。它不会自动判断对错，也不保证每次更新都正确。"
+        }
+      ],
+      "board": null,
+      "visual": "The mixing-desk sliders shifting on their own as the student figure changes posture; Nezu watching with arms crossed, Kumo amazed.",
+      "beat": "method",
+      "claims": [
+        8
+      ],
+      "source_evidence": "§3.2: \"αv = sg[pv/(pv + qv)] is the candidate-specific mixing weight computed at prefix h\"; App A.3: evaluated over the union of teacher and student top-20 tokens plus a residual category.",
+      "characters": [
+        "kumo",
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 25,
+      "chapter": "新方法",
+      "title": "局部检查支持这个想法",
+      "kind": "scene",
+      "narration": "模型内部先给候选片段打分，再把分数转成概率。这里的“分数”是内部打分，不是答题成绩。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "论文只在同一个前缀上，小幅调整这些内部打分，检查严重偏低、偏高的概率是否朝老师靠近。"
+        },
+        {
+          "speaker": "papi",
+          "text": "动态KL纠正低估的表现接近前向KL，纠正高估的表现接近反向KL。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "这个检查没有更新整个模型的权重，不能当作完整训练后的答题效果。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "所以，接下来还得看最终答题成绩。"
+        }
+      ],
+      "board": null,
+      "visual": "Three small athletes on a two-event podium; the third athlete stands on second place in both events while each of the other two wins one event and lags in the other.",
+      "beat": "method",
+      "claims": [
+        8
+      ],
+      "source_evidence": "App A.4: \"Among the 1,913 underpredicted candidates off by a factor of at least 20, FKL does so for 99.7%, RKL for 70.9%, and Dynamic KL for 95.1%. Among the 1,828 overpredicted ones, FKL does so for 75.1%, RKL for 86.3%, and Dynamic KL for 84.7%.\"",
+      "characters": [
+        "nezu",
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 26,
+      "chapter": "证据",
+      "title": "拿什么模型来试",
+      "kind": "scene",
+      "narration": "实验用的是Qwen3系列的三个模型：1.7B、4B、8B。B是billion（十亿），指参数（权重）的个数，1.7B大约是17亿个。 这里的2位、3位只指权重；计算过程中传递的数值仍用16位。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "机制讲完了，该看结果了。"
+        },
+        {
+          "speaker": "papi",
+          "text": "每个模型都压成3位和2位两种，一共六种设置。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "在这篇论文比较的2位、3位设置中，2位的刻度更少：每个权重只能选4个刻度。"
+        }
+      ],
+      "board": null,
+      "visual": "Three robot figures of small, medium and large size standing in a row, each holding two different-sized suitcases; Kumo checking them off on a clipboard.",
+      "beat": "proof",
+      "claims": [
+        9
+      ],
+      "source_evidence": "§4: \"We conduct experiments on Qwen3-1.7B, 4B, and 8B (Yang et al., 2025) at 2- and 3-bit weight precision (W2 and W3).\"",
+      "characters": [
+        "kumo",
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 27,
+      "chapter": "证据",
+      "title": "九项测试",
+      "kind": "board",
+      "narration": "测试使用推理模式。代码分数看一次回答通过测试的比例，其他项目看答对或符合要求的比例。分数越高越好。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "测试覆盖数学、代码、知识和按指令办事四类。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "AIME和LiveCodeBench的回答特别长，正好考长推理。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "大部分分数是三组随机设置的平均；AutoRound只测了一组。"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "九项测试（平均分是九项的简单平均）",
+        "items": [
+          "数学：GSM8K、MATH-500、AIME 24–26（竞赛题）",
+          "代码：HumanEval+、MBPP+、LiveCodeBench（竞赛编程）",
+          "知识与科学：MMLU-Redux、GPQA-Diamond",
+          "按指令办事：IFEval"
+        ],
+        "open": false,
+        "checked": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "visual": "Four exam rooms seen through doorways along a corridor, each with a different symbol on the door; Papi leading Kumo down the hall.",
+      "beat": "proof",
+      "claims": [],
+      "source_evidence": "§4 Evaluation: \"nine benchmarks: GSM8K … IFEval\"; \"Avg. is the unweighted mean across the nine benchmarks\"; §5: \"even at full precision, LiveCodeBench responses are about three times as long\".",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    },
+    {
+      "n": 28,
+      "chapter": "证据",
+      "title": "拿来对比的现有方法",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "跟谁比，很重要。"
+        },
+        {
+          "speaker": "papi",
+          "text": "右边三种都用同一批写好的问答对来训练。其中EfficientQAT和ReasoningQAT还和OnQ从同一个校准起点出发。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "对比方法",
+        "left": {
+          "label": "训练后量化（PTQ）",
+          "items": [
+            "GPTQ",
+            "AutoRound",
+            "把已有模型量化；不做后续的QAT训练"
+          ]
+        },
+        "right": {
+          "label": "用固定回答做量化感知训练（QAT）",
+          "items": [
+            "EfficientQAT",
+            "BitDistiller",
+            "ReasoningQAT"
+          ]
+        },
+        "source": "论文第4节；附录A.5"
+      },
+      "visual": "Nezu standing at a starting line next to five rival runners in two groups, inspecting them like a referee.",
+      "beat": "proof",
+      "claims": [],
+      "source_evidence": "§4 Baselines: \"GPTQ … and AutoRound … for PTQ, and EfficientQAT …, BitDistiller …, and ReasoningQAT … for QAT\"; App A.5: \"The three QAT baselines use the 32,768 single-turn question–response pairs\"; EfficientQAT/ReasoningQAT \"Starts from the same calibrated checkpoint\".",
+      "characters": [
+        "nezu",
+        "papi"
+      ]
+    },
+    {
+      "n": 29,
+      "chapter": "证据",
+      "title": "8B、2位：领先了，也还有差距",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "比最强的对比方法高了10.26个百分点！"
+        },
+        {
+          "speaker": "nezu",
+          "text": "可离完整模型还差11.14个百分点，压缩的代价还在。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "8B、2位：九项平均分",
+        "subtitle": "Qwen3-8B；比较量化方法，同时保留完整模型作参照",
+        "unit": "%",
+        "higher_is_better": true,
+        "bars": [
+          {
+            "label": "完整模型（未压缩）",
+            "value": 81.82,
+            "highlight": false
+          },
+          {
+            "label": "OnQ（2位）",
+            "value": 70.68,
+            "highlight": true
+          },
+          {
+            "label": "BitDistiller（2位）",
+            "value": 60.42,
+            "highlight": false,
+            "baseline": true
+          },
+          {
+            "label": "ReasoningQAT（2位）",
+            "value": 60.24,
+            "highlight": false
+          }
+        ],
+        "source": "论文表1"
+      },
+      "visual": "Kumo jumping with joy at a scoreboard while Nezu calmly points to a still-higher mark above it.",
+      "beat": "proof",
+      "claims": [
+        10
+      ],
+      "source_evidence": "Table 1 Qwen3-8B: Full precision 16/16 Avg 81.82; BitDistiller 2/16 60.42; ReasoningQAT 2/16 60.24; OnQ 2/16 70.68. Abstract: \"improving the Qwen3-8B average by 10.26 points over the strongest baseline\".",
+      "characters": [
+        "kumo",
+        "nezu"
+      ]
+    },
+    {
+      "n": 30,
+      "chapter": "证据",
+      "title": "六种设置都看一遍",
+      "kind": "board",
+      "narration": "在本文测试范围内，压到2位时，OnQ相对其他量化方法的优势更大。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "这六种设置里，OnQ的九项平均分在所比较的量化方法中都是最高的。"
+        },
+        {
+          "speaker": "papi",
+          "text": "2位时更进一步：每个规模、每项测试，它都高于论文比较的其他量化方法。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "3位时领先少得多，也不是每项测试都第一。"
+        }
+      ],
+      "board": {
+        "kind": "table",
+        "title": "九项平均分（%）：OnQ与最强量化对比方法",
+        "columns": [
+          "模型",
+          "完整模型",
+          "3位：OnQ / 最强对比",
+          "2位：OnQ / 最强对比"
+        ],
+        "rows": [
+          [
+            "1.7B",
+            "67.58",
+            "60.77 / 57.38",
+            "45.24 / 40.82"
+          ],
+          [
+            "4B",
+            "79.93",
+            "76.29 / 74.22",
+            "64.95 / 53.31"
+          ],
+          [
+            "8B",
+            "81.82",
+            "79.19 / 77.84",
+            "70.68 / 60.42"
+          ]
+        ],
+        "source": "论文表1"
+      },
+      "visual": "Papi rolling out a long ledger across a table while Nezu runs a claw down each row; Kumo peeking over the edge.",
+      "beat": "proof",
+      "claims": [
+        9,
+        10
+      ],
+      "source_evidence": "§5: \"It achieves the highest nine-benchmark average in all six model/bit settings and the highest score on 48 of the 54 benchmark–setting pairs\"; \"At 2 bits … achieves the highest score on every benchmark at every model size\"; \"the margin over the strongest baseline is larger at 2 bits than at 3 bits\".",
+      "characters": [
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 31,
+      "chapter": "证据",
+      "title": "长推理题上领先最多",
+      "kind": "board",
+      "narration": "AIME是竞赛数学题，回答通常很长。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "六种设置里有五种，OnQ领先最多的测试是AIME或LiveCodeBench，两项都要写很长。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "可在这项上它离完整模型也最远，还差27.78个百分点。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "8B、2位：AIME 24–26得分",
+        "subtitle": "回答很长的竞赛数学；越高越好",
+        "unit": "%",
+        "higher_is_better": true,
+        "bars": [
+          {
+            "label": "完整模型（未压缩）",
+            "value": 71.85,
+            "highlight": false
+          },
+          {
+            "label": "OnQ（2位）",
+            "value": 44.07,
+            "highlight": true
+          },
+          {
+            "label": "ReasoningQAT（2位）",
+            "value": 28.15,
+            "highlight": false,
+            "baseline": true
+          },
+          {
+            "label": "BitDistiller（2位）",
+            "value": 22.59,
+            "highlight": false
+          }
+        ],
+        "source": "论文表1"
+      },
+      "visual": "A steep mountain trail; the OnQ climber is well ahead of two rivals but still far below the summit flag held by the teacher figure; Nezu watching through binoculars.",
+      "beat": "proof",
+      "claims": [
+        9
+      ],
+      "source_evidence": "§5: \"In five of the six settings, the largest margin of OnQ over the strongest baseline falls on AIME or LiveCodeBench\"; Table 1 Qwen3-8B AIME: Full 71.85, OnQ 2/16 44.07, ReasoningQAT 28.15, BitDistiller 22.59.",
+      "characters": [
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 32,
+      "chapter": "证据",
+      "title": "写不完的少了，回答也更短",
+      "kind": "board",
+      "narration": "这组比较把回答长度上限设为32768个文字片段。到了上限仍未写完，就被切断，记为“截断”。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "写不完的情况少多了。"
+        },
+        {
+          "speaker": "papi",
+          "text": "在六种设置里，OnQ的平均截断率都是QAT方法中最低的。2位时，在MATH-500、AIME、LiveCodeBench上，九种情况里有八种，它的平均回答比最准的对比方法更短。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "这些都是在论文的评测里测到的，换了别的任务还得重新测。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "8B、2位：被长度上限截断的回答比例",
+        "subtitle": "九项测试的平均；越低越好",
+        "unit": "%",
+        "higher_is_better": false,
+        "bars": [
+          {
+            "label": "OnQ",
+            "value": 4.39,
+            "highlight": true
+          },
+          {
+            "label": "ReasoningQAT",
+            "value": 11.56,
+            "highlight": false,
+            "baseline": true
+          },
+          {
+            "label": "BitDistiller",
+            "value": 16.51,
+            "highlight": false
+          },
+          {
+            "label": "EfficientQAT",
+            "value": 26.57,
+            "highlight": false
+          }
+        ],
+        "source": "论文附录C表7；第6.1节"
+      },
+      "visual": "A row of scrolls on a shelf: most of the OnQ scrolls are neatly finished, while many rival scrolls are cut off with scissors at the same length; Kumo pleased, Nezu taking notes.",
+      "beat": "proof",
+      "claims": [
+        11
+      ],
+      "source_evidence": "§6.1: \"shorter mean responses than the most accurate baseline in eight of the nine cases\"; \"OnQ has the lowest average truncation rate among QAT methods in all six settings (Appendix C)\"; Table 7 Qwen3-8B 2/16 Avg: OnQ 4.39, ReasoningQAT 11.56, BitDistiller 16.51, EfficientQAT 26.57.",
+      "characters": [
+        "kumo",
+        "papi",
+        "nezu"
+      ]
+    },
+    {
+      "n": 33,
+      "chapter": "证据",
+      "title": "反复照抄的错误少了",
+      "kind": "board",
+      "narration": "“重复错误”指一句话、一段内容或一步计算被一遍又一遍地照抄。这里统计同一组随机设置（种子42）的输出。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "重复错误是怎么判定的？"
+        },
+        {
+          "speaker": "papi",
+          "text": "让一个AI模型在不知道是哪种方法的情况下判两遍；有分歧或拿不准的，由作者通读后定。"
+        },
+        {
+          "speaker": "papi",
+          "text": "把答案分类后，论文发现：OnQ相对ReasoningQAT增加的答对比例，大部分与重复错误比例的下降相对应。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "1.7B、2位：MATH-500上出现重复错误的题目比例",
+        "subtitle": "越低越好；后两根给出三种固定回答训练方法的范围",
+        "unit": "% 题目",
+        "higher_is_better": false,
+        "bars": [
+          {
+            "label": "完整模型",
+            "value": 0,
+            "highlight": false
+          },
+          {
+            "label": "OnQ",
+            "value": 2.4,
+            "highlight": true
+          },
+          {
+            "label": "固定回答训练：最低",
+            "value": 11.4,
+            "highlight": false
+          },
+          {
+            "label": "固定回答训练：最高",
+            "value": 54,
+            "highlight": false
+          }
+        ],
+        "source": "论文第6.1节；图5a；附录B"
+      },
+      "visual": "A stack of answer sheets, a few of them covered with the same scribble copied over and over; Nezu inspecting one sheet with a magnifying glass while Papi sorts the pile.",
+      "beat": "proof",
+      "claims": [
+        11
+      ],
+      "source_evidence": "§6.1: \"The full-precision models produce no repetitive errors on MATH-500 … The fixed-response QAT baselines produce repetitive errors on 11.4–54.0% of the MATH-500 questions … OnQ produces repetitive errors on only 2.4% … this reduction accounts for most of its accuracy gain over ReasoningQAT\"; App B: two independent passes, disagreements to author review.",
+      "characters": [
+        "nezu",
+        "papi"
+      ]
+    },
+    {
+      "n": 34,
+      "chapter": "证据",
+      "title": "固定回答对比自己写：一组对照",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "同样用动态KL，换成在自己写的前缀上训练，高了8.40个百分点。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "但两组的题目来源不同：固定回答组用的是对比方法那批问答对，自己写组用的是论文自己的题库。所以这不是只改了一个变量的实验。"
+        },
+        {
+          "speaker": "papi",
+          "text": "还有，69.40是这组对照实验的数，和主表里同为1.7B、2位的69.33不是同一次测量。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "1.7B、2位：MATH-500得分",
+        "subtitle": "三组从同一个校准起点出发，训练用的回答片段总数相同；越高越好",
+        "unit": "%",
+        "higher_is_better": true,
+        "bars": [
+          {
+            "label": "固定回答 + 前向KL",
+            "value": 59,
+            "highlight": false
+          },
+          {
+            "label": "固定回答 + 动态KL",
+            "value": 61,
+            "highlight": false,
+            "baseline": true
+          },
+          {
+            "label": "自己写 + 动态KL（OnQ）",
+            "value": 69.4,
+            "highlight": true
+          }
+        ],
+        "source": "论文第6.2节表3；附录A.7"
+      },
+      "visual": "Two training tracks starting from the same gate; Nezu pointing out that the two tracks are fed by different boxes of question cards, Papi holding a separate score sheet aside.",
+      "beat": "proof",
+      "claims": [],
+      "source_evidence": "§6.2: \"All three runs start from the same calibrated checkpoint and use the same number of response tokens; fixed-response training uses the QAT baselines' question–response pairs and on-policy training uses our prompt pool\"; Table 3 MATH-500: 59.00 / 61.00 / 69.40; Table 1 Qwen3-1.7B OnQ 2/16 MATH-500 69.33.",
+      "characters": [
+        "kumo",
+        "nezu",
+        "papi"
+      ]
+    },
+    {
+      "n": 35,
+      "chapter": "proof",
+      "title": "都让学生自己写，再比较量法",
+      "kind": "board",
+      "beat": "proof",
+      "claims": [],
+      "characters": [
+        "papi",
+        "nezu"
+      ],
+      "visual": "Papi and Nezu stand beside a blank board, comparing three equal-size cards. No letters or numbers in the artwork.",
+      "narration": "另一组实验都让学生自己写，使用相同起点、训练题目和400步预算。它只用数学题训练，与上一格不是同一组实验。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "这组结果里，动态KL的MATH-500分数，比单用前向KL高1.0个百分点，比单用反向KL高4.2个百分点。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "表中没有给出波动范围，不能据这一次的差距断言它总会胜出。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "这组对照支持该设计在这里有帮助，但还不能解释每一个概率偏差怎样造成了具体的推理错误。"
+        }
+      ],
+      "board": {
+        "kind": "table",
+        "title": "都自己写：MATH-500得分（%）",
+        "subtitle": "Qwen3-1.7B，权重2位；另一组独立对照",
+        "columns": [
+          "量法",
+          "得分"
+        ],
+        "rows": [
+          [
+            "反向KL（Vanilla OPD）",
+            "63.00"
+          ],
+          [
+            "前向KL（GKD）",
+            "66.20"
+          ],
+          [
+            "动态KL（OnQ）",
+            "67.20"
+          ]
+        ],
+        "source": "论文第6.2节表4"
+      },
+      "source_evidence": "第6.2节表4：相同cold-start初始化、DeepScaleR数学训练集、400步；RKL 63.00、FKL 66.20、Dynamic KL 67.20；表未列波动范围。"
+    },
+    {
+      "n": 36,
+      "chapter": "局限",
+      "title": "要记住的限制",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "结果好，这些限制也得写清楚。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "特别是第二条：变好了，但还没追上完整模型。"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "限制",
+        "items": [
+          "只测了Qwen3这一个系列的三个规模，别的模型家族没有测",
+          "2位仍明显不如完整模型：8B的九项平均是70.68对81.82",
+          "都是整体统计：截断和重复变少了，但不保证每道题都能写完、写对",
+          "论文没有报告OnQ与对比方法在训练花费上的比较"
+        ],
+        "open": false,
+        "checked": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "visual": "Nezu standing beside a small signboard with a caution symbol, holding a pointer; Kumo and Papi listening seriously.",
+      "beat": "limits",
+      "claims": [],
+      "source_evidence": "§4: \"Qwen3-1.7B, 4B, and 8B\"; Table 1 Qwen3-8B: OnQ 2/16 Avg 70.68 vs Full precision 81.82; §6.1 Fig.5: OnQ repetitive errors 2.4% (not zero) on MATH-500; App A.2: \"OPD uses verl … on NVIDIA H100 and H200 GPUs\" (no cost comparison reported).",
+      "characters": [
+        "nezu",
+        "kumo"
+      ]
+    },
+    {
+      "n": 37,
+      "chapter": "回答",
+      "title": "回到开头的三个问题",
+      "kind": "board",
+      "narration": "",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "回到开头的三个问题。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "现在我说得清了：在哪里练，跟谁学，怎么拉，效果到哪一步。"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "我们的问题，按顺序回答",
+        "items": [
+          "固定回答未必覆盖学生实际写出的内容；同一前缀上，它还可能同时高估、低估不同候选。",
+          "先校准，再让学生自己写。原始完整模型给出下一步的参考概率；动态KL根据每个候选给多了还是给少了，混合两种训练方向。",
+          "在论文测过的六种设置里，OnQ的平均分领先其他量化方法，但仍落后于完整模型。回答更短、截断和重复更少，也不代表每道题都会答对。"
+        ],
+        "open": false,
+        "checked": [
+          0,
+          1,
+          2
+        ]
+      },
+      "visual": "Kumo ticking off three items on the whiteboard with a big check mark; Papi smiling, Nezu giving a small approving nod.",
+      "beat": "recap",
+      "claims": [
+        4,
+        7,
+        8,
+        10,
+        11
+      ],
+      "source_evidence": "Abstract: \"fixed-response supervision leaves a mismatch…\"; \"the quantized student generates responses and receives full-precision teacher supervision on its own prefixes. Dynamic KL weights forward and reverse KL by each candidate's teacher–student probability ratio\"; \"improving the Qwen3-8B average by 10.26 points\"; \"shorter responses with fewer truncations and repetitive errors\".",
+      "characters": [
+        "papi",
+        "kumo"
+      ]
+    }
+  ],
+  "language": "zh-CN",
+  "theme": "kumomo",
+  "version": 3,
+  "brief": {
+    "reader_contract": "novice_v1"
+  },
+  "abstract_claims": [
+    {
+      "id": 0,
+      "text": "Quantization-aware training (QAT) exists to recover reasoning ability in low-bit large language models",
+      "quote": "Quantization-aware training (QAT) aims to recover reasoning capabilities in lowbit large language models (LLMs)."
+    },
+    {
+      "id": 1,
+      "text": "Existing QAT recipes typically supervise the quantized student with the full-precision teacher on fixed response sequences.",
+      "quote": "Existing recipes typically supervise the quantized student with the original full-precision model on fixed response sequences."
+    },
+    {
+      "id": 2,
+      "text": "Even after standard QAT, low-bit models still fail at long reasoning tasks and often run out of token space even when the full model fits its answer fine",
+      "quote": "However, the resulting low-bit quantized models still struggle on long-horizon reasoning tasks and often fail to terminate within a token budget that suffices for the full-precision model."
+    },
+    {
+      "id": 3,
+      "text": "There are two core challenges preventing fixing this gap",
+      "quote": "We identify two challenges in closing this gap."
+    },
+    {
+      "id": 4,
+      "text": "First: fixed-response training creates a mismatch between training prefixes and the prefixes the student actually generates, and this gap grows as responses get longer",
+      "quote": "First, fixed-response supervision leaves a mismatch between training prefixes and those encountered during student generation, and this trajectory divergence grows as responses lengthen."
+    },
+    {
+      "id": 5,
+      "text": "Second: on its own generated prefixes, the student underpredicts some next tokens and overpredicts others, and this happens most often at high-uncertainty positions",
+      "quote": "Second, on its own prefixes, the student underpredicts some next-token candidates and overpredicts others, and this distributional misalignment becomes more frequent at high-entropy prefixes."
+    },
+    {
+      "id": 6,
+      "text": "The authors present OnQ, a low-bit recovery pipeline combining on-policy distillation and candidate-wise Dynamic KL",
+      "quote": "We present OnQ, a low-bit recovery pipeline that combines on-policy distillation and candidate-wise Dynamic KL."
+    },
+    {
+      "id": 7,
+      "text": "OnQ starts with block-wise calibration, then has the student generate responses and receives teacher supervision on exactly those student-generated prefixes",
+      "quote": "Starting from block-wise calibration, the quantized student generates responses and receives full-precision teacher supervision on its own prefixes."
+    },
+    {
+      "id": 8,
+      "text": "Dynamic KL weights forward and reverse KL by each candidate's teacher-student probability ratio to balance fixing under and over prediction",
+      "quote": "Dynamic KL weights forward and reverse KL by each candidate’s teacher–student probability ratio to balance correction of under- and overprediction."
+    },
+    {
+      "id": 9,
+      "text": "Across Qwen3-1.7B, 4B, 8B at 2 and 3 bit precision, OnQ achieves the highest average score across 9 benchmarks, with largest gains on long reasoning tasks",
+      "quote": "Across Qwen3-1.7B, 4B, and 8B at 2- and 3-bit precision, OnQ achieves the highest nine-benchmark average, with the largest gains on long-horizon reasoning benchmarks."
+    },
+    {
+      "id": 10,
+      "text": "At 2 bits, OnQ outperforms every baseline on every benchmark at every model size, and improves Qwen3-8B average score by 10.26 points over the strongest baseline",
+      "quote": "At 2 bits, it outperforms every baseline on every benchmark at every model size, improving the Qwen3-8B average by 10.26 points over the strongest baseline."
+    },
+    {
+      "id": 11,
+      "text": "OnQ also produces shorter responses with fewer truncations and fewer repetitive errors",
+      "quote": "It also produces shorter responses with fewer truncations and repetitive errors."
+    }
+  ]
+}

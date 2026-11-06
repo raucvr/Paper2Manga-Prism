@@ -1,0 +1,1225 @@
+{
+  "title": "OnQ：修复失灵的极低位大模型",
+  "language": "zh-CN",
+  "theme": "kumomo",
+  "version": 3,
+  "panels": [
+    {
+      "n": 1,
+      "kind": "scene",
+      "narration": "这是论文里校准过的Qwen3-1.7B 2比特模型。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "这个2比特模型怎么不行？它最看好“some”，老师要“a”。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "旧的QAT用固定的全精度回答来训练它。"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 2,
+      "kind": "scene",
+      "narration": "作者发现了两个阻碍性能提升的核心问题。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "这正是这篇论文要解决的问题。"
+        },
+        {
+          "speaker": "nezu",
+          "text": "小修小补而已。我赌一个浆果挞，它修不好长任务。"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 3,
+      "kind": "board",
+      "narration": "首先是论文自己的总结。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "我们来验证一下这些说法是否成立。"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "论文的主张",
+        "subtitle": "论文自己的总结",
+        "items": [
+          "QAT旨在恢复压缩后极低位大模型的推理能力",
+          "旧QAT通常只用固定的现成答案训练",
+          "旧模型长任务失败，token耗尽",
+          "两大缺陷：错配+双向误差",
+          "OnQ：提出的极低位恢复流程",
+          "OnQ在8B 2比特平均分上比BitDistiller高10.26分"
+        ],
+        "open": true
+      }
+    },
+    {
+      "n": 4,
+      "kind": "board",
+      "narration": "第一个核心缺陷：轨迹发散。回答越长，错配越严重。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "旧训练从没见过学生模型真实生成的路径。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "训练前缀错配",
+        "subtitle": "固定训练忽略了学生模型实际写出的内容",
+        "left": {
+          "label": "旧的固定训练",
+          "items": [
+            "只用参考答案训练",
+            "从没见过这个“some”前缀",
+            "错配随长度增长"
+          ]
+        },
+        "right": {
+          "label": "学生模型的实际行为",
+          "items": [
+            "生成自己的前缀",
+            "这个“some”前缀是真实存在的",
+            "这种情况没有训练过"
+          ]
+        }
+      }
+    },
+    {
+      "n": 5,
+      "kind": "board",
+      "narration": "在这个确切前缀上的第二个核心缺陷。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "等等，它同时往两个方向出错？"
+        }
+      ],
+      "board": {
+        "kind": "diagram",
+        "title": "该前缀处的预测误差",
+        "subtitle": "老师模型与学生模型的下一个token概率对比",
+        "elements": [
+          {
+            "type": "text",
+            "tone": "red",
+            "text": "预测偏低",
+            "x": 277.0,
+            "y": 120.0,
+            "size": 34.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "red",
+            "text": "预测偏高",
+            "x": 667.0,
+            "y": 120.0,
+            "size": 34.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "a",
+            "x": 180.0,
+            "y": 170.0,
+            "size": 38.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "two",
+            "x": 375.0,
+            "y": 170.0,
+            "size": 38.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "一些",
+            "x": 570.0,
+            "y": 170.0,
+            "size": 38.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "另一些",
+            "x": 765.0,
+            "y": 170.0,
+            "size": 38.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "the",
+            "x": 960.0,
+            "y": 170.0,
+            "size": 38.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "grey",
+            "text": "老师模型",
+            "x": 1020.0,
+            "y": 110.0,
+            "size": 32.0,
+            "anchor": "start"
+          },
+          {
+            "type": "text",
+            "tone": "blue",
+            "text": "学生模型",
+            "x": 1020.0,
+            "y": 150.0,
+            "size": 32.0,
+            "anchor": "start"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 118.0,
+            "y": 290.0,
+            "w": 50.0,
+            "h": 250.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 192.0,
+            "y": 460.0,
+            "w": 50.0,
+            "h": 80.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 313.0,
+            "y": 330.0,
+            "w": 50.0,
+            "h": 210.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 387.0,
+            "y": 420.0,
+            "w": 50.0,
+            "h": 120.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 508.0,
+            "y": 410.0,
+            "w": 50.0,
+            "h": 130.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 582.0,
+            "y": 290.0,
+            "w": 50.0,
+            "h": 250.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 703.0,
+            "y": 430.0,
+            "w": 50.0,
+            "h": 110.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 777.0,
+            "y": 330.0,
+            "w": 50.0,
+            "h": 210.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 898.0,
+            "y": 516.0,
+            "w": 50.0,
+            "h": 24.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 972.0,
+            "y": 516.0,
+            "w": 50.0,
+            "h": 24.0,
+            "fill": "tint"
+          }
+        ],
+        "brief": "Shows bar pairs for each token: 'a' and 'two' have tall teacher bars, short student bars; 'some' and 'others' have tall student bars, short teacher bars. Both under and over prediction happen here.",
+        "designed_for": "1486c71dbff1"
+      }
+    },
+    {
+      "n": 6,
+      "kind": "scene",
+      "narration": "在同一前缀上同时低估和高估token，在不确定的高熵步骤上更常见。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "而且模型越不确定，这种情况越多？"
+        },
+        {
+          "speaker": "papi",
+          "text": "没错。这就是分布错位。"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 7,
+      "kind": "board",
+      "narration": "OnQ流程针对训练前缀错配问题。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "哦！我们就在学生模型犯错的地方训练它！"
+        }
+      ],
+      "board": {
+        "kind": "flow",
+        "title": "OnQ流程",
+        "subtitle": "同策略蒸馏：用学生模型自己生成的回答训练，而非固定回答。",
+        "steps": [
+          "逐块校准",
+          "带动态KL的同策略蒸馏"
+        ],
+        "highlight": [
+          1
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "kind": "board",
+      "narration": "这消除了训练前缀与学生实际生成内容之间的错配。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "校准之后，学生模型先生成回答。"
+        },
+        {
+          "speaker": "papi",
+          "text": "老师模型监督学生写出的每一个前缀。"
+        }
+      ],
+      "board": {
+        "kind": "diagram",
+        "title": "同策略蒸馏",
+        "subtitle": "在学生模型实际写出的内容上训练",
+        "elements": [
+          {
+            "type": "box",
+            "tone": "ink",
+            "text": "逐块校准",
+            "x": 30.0,
+            "y": 40.0,
+            "w": 220.0,
+            "h": 90.0,
+            "fill": "none",
+            "size": 32.0
+          },
+          {
+            "type": "circle",
+            "tone": "ink",
+            "text": "1",
+            "x": 310.0,
+            "y": 85.0,
+            "r": 36.0,
+            "fill": "none",
+            "size": 38.0
+          },
+          {
+            "type": "arrow",
+            "tone": "ink",
+            "points": [
+              [
+                140.0,
+                130.0
+              ],
+              [
+                140.0,
+                210.0
+              ]
+            ],
+            "heads": "end"
+          },
+          {
+            "type": "box",
+            "tone": "red",
+            "text": "量化学生模型",
+            "bold": true,
+            "x": 30.0,
+            "y": 210.0,
+            "w": 230.0,
+            "h": 100.0,
+            "fill": "tint",
+            "size": 36.0
+          },
+          {
+            "type": "circle",
+            "tone": "ink",
+            "text": "2",
+            "x": 330.0,
+            "y": 230.0,
+            "r": 36.0,
+            "fill": "none",
+            "size": 38.0
+          },
+          {
+            "type": "box",
+            "tone": "red",
+            "text": "全精度老师模型",
+            "bold": true,
+            "x": 760.0,
+            "y": 40.0,
+            "w": 380.0,
+            "h": 100.0,
+            "fill": "tint",
+            "size": 38.0
+          },
+          {
+            "type": "text",
+            "tone": "red",
+            "text": "同策略（本文）",
+            "bold": true,
+            "x": 600.0,
+            "y": 315.0,
+            "size": 38.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "line",
+            "tone": "red",
+            "points": [
+              [
+                180.0,
+                380.0
+              ],
+              [
+                976.0,
+                380.0
+              ]
+            ]
+          },
+          {
+            "type": "arrow",
+            "tone": "red",
+            "points": [
+              [
+                950.0,
+                140.0
+              ],
+              [
+                950.0,
+                380.0
+              ]
+            ],
+            "heads": "end"
+          },
+          {
+            "type": "arrow",
+            "tone": "red",
+            "points": [
+              [
+                260.0,
+                270.0
+              ],
+              [
+                578.0,
+                410.0
+              ]
+            ],
+            "heads": "end"
+          },
+          {
+            "type": "box",
+            "tone": "ink",
+            "text": "a",
+            "x": 180.0,
+            "y": 420.0,
+            "w": 140.0,
+            "h": 100.0,
+            "fill": "none",
+            "size": 36.0
+          },
+          {
+            "type": "box",
+            "tone": "ink",
+            "text": "two",
+            "x": 344.0,
+            "y": 420.0,
+            "w": 140.0,
+            "h": 100.0,
+            "fill": "none",
+            "size": 36.0
+          },
+          {
+            "type": "box",
+            "tone": "red",
+            "text": "一些",
+            "bold": true,
+            "x": 508.0,
+            "y": 410.0,
+            "w": 140.0,
+            "h": 120.0,
+            "fill": "tint",
+            "size": 36.0
+          },
+          {
+            "type": "box",
+            "tone": "ink",
+            "text": "另一些",
+            "x": 672.0,
+            "y": 420.0,
+            "w": 140.0,
+            "h": 100.0,
+            "fill": "none",
+            "size": 36.0
+          },
+          {
+            "type": "box",
+            "tone": "ink",
+            "text": "the",
+            "x": 836.0,
+            "y": 420.0,
+            "w": 140.0,
+            "h": 100.0,
+            "fill": "none",
+            "size": 36.0
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "text": "参考前缀",
+            "x": 30.0,
+            "y": 430.0,
+            "w": 120.0,
+            "h": 90.0,
+            "fill": "none",
+            "dashed": true,
+            "size": 32.0
+          }
+        ],
+        "brief": "Shows the student generates its full response, then the teacher gives next-token feedback on every prefix the student wrote, including this 'some' prefix that fixed training skips.",
+        "designed_for": "44af25a7ef89"
+      }
+    },
+    {
+      "n": 9,
+      "kind": "board",
+      "narration": "KL：衡量概率差异的指标。这能同时修复两类误差。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "哦！按师生概率比加权。这招聪明。"
+        }
+      ],
+      "board": {
+        "kind": "compare",
+        "title": "动态KL修正",
+        "subtitle": "同时修复低估和高估",
+        "left": {
+          "label": "低估的“a”",
+          "items": [
+            "老师 > 学生",
+            "更多前向KL",
+            "把学生概率拉高"
+          ]
+        },
+        "right": {
+          "label": "高估的“others”",
+          "items": [
+            "学生 > 老师",
+            "更多反向KL",
+            "把学生概率压低"
+          ]
+        }
+      }
+    },
+    {
+      "n": 10,
+      "kind": "board",
+      "narration": "OnQ在9项基准平均分上击败了最强基线。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "整整10.26分？太猛了！"
+        },
+        {
+          "speaker": "nezu",
+          "text": "……好吧。这可不是小修小补。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "9项基准平均分：Qwen3-8B 2比特",
+        "subtitle": "9项任务的平均分；越高越好。BitDistiller：此前的固定回答QAT基线。ReasoningQAT：论文中另一个QAT基线。",
+        "bars": [
+          {
+            "label": "BitDistiller",
+            "value": "60.42",
+            "highlight": false,
+            "baseline": true,
+            "quote": "[T1.r40] BitDistiller | 2/16 c1: 90.60 c2: 79.00 c3: 22.59 c4: 72.56 c5: 65.87 c6: 35.45 c7: 71.76 c8: 33.84 c9: 72.09 c10: 60.42",
+            "paper_label": "BitDistiller | 2/16",
+            "cell": "T1.r40.c10"
+          },
+          {
+            "label": "ReasoningQAT",
+            "value": "60.24",
+            "highlight": false,
+            "quote": "[T1.r41] ReasoningQAT | 2/16 c1: 90.52 c2: 85.27 c3: 28.15 c4: 72.36 c5: 63.40 c6: 40.06 c7: 69.47 c8: 30.81 c9: 62.11 c10: 60.24",
+            "paper_label": "ReasoningQAT | 2/16",
+            "cell": "T1.r41.c10"
+          },
+          {
+            "label": "OnQ",
+            "value": "70.68",
+            "highlight": true,
+            "quote": "[T1.r42] OnQ | 2/16 c1: 93.48 c2: 90.60 c3: 44.07 c4: 82.93 c5: 70.72 c6: 55.04 c7: 78.75 c8: 43.43 c9: 77.08 c10: 70.68",
+            "paper_label": "OnQ | 2/16",
+            "cell": "T1.r42.c10"
+          },
+          {
+            "label": "全精度",
+            "value": "81.82",
+            "highlight": false,
+            "quote": "[T1.r30] Full precision | 16/16 c1: 95.73 c2: 95.53 c3: 71.85 c4: 88.21 c5: 79.28 c6: 73.59 c7: 87.42 c8: 59.93 c9: 84.84 c10: 81.82",
+            "paper_label": "Full precision | 16/16",
+            "cell": "T1.r30.c10"
+          }
+        ],
+        "unit": "%",
+        "higher_is_better": true,
+        "source": "表1"
+      }
+    },
+    {
+      "n": 11,
+      "kind": "board",
+      "narration": "2比特精度下，OnQ在所有模型规模的所有测试中全获胜。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "2比特精度下，OnQ每项基准都赢了所有基线？"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "2比特性能结果",
+        "subtitle": "Qwen3 1.7B/4B/8B；5个基线；9项基准",
+        "items": [
+          "在每项基准上均超越所有基线",
+          "在所有模型规模的每项2比特基准上获胜",
+          "Qwen3-8B平均分比最强基线高10.26分"
+        ]
+      }
+    },
+    {
+      "n": 12,
+      "kind": "board",
+      "narration": "最大提升出现在长程推理任务上。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "OnQ在所有测试中都取得了最高的9项基准平均分。"
+        }
+      ],
+      "board": {
+        "kind": "table",
+        "title": "9项基准平均分",
+        "subtitle": "越高越好；OnQ在所有设置中均居首",
+        "columns": [
+          "模型",
+          "比特",
+          "最强基线",
+          "OnQ"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Qwen3-1.7B",
+              "2",
+              "40.82",
+              "45.24"
+            ],
+            "cell_ids": [
+              null,
+              null,
+              "T1.r13.c10",
+              "T1.r14.c10"
+            ]
+          },
+          {
+            "cells": [
+              "Qwen3-1.7B",
+              "3",
+              "57.38",
+              "60.77"
+            ],
+            "cell_ids": [
+              null,
+              null,
+              "T1.r7.c10",
+              "T1.r8.c10"
+            ]
+          },
+          {
+            "cells": [
+              "Qwen3-4B",
+              "2",
+              "53.31",
+              "64.95"
+            ],
+            "cell_ids": [
+              null,
+              null,
+              "T1.r27.c10",
+              "T1.r28.c10"
+            ]
+          },
+          {
+            "cells": [
+              "Qwen3-4B",
+              "3",
+              "74.22",
+              "76.29"
+            ],
+            "cell_ids": [
+              null,
+              null,
+              "T1.r21.c10",
+              "T1.r22.c10"
+            ]
+          },
+          {
+            "cells": [
+              "Qwen3-8B",
+              "2",
+              "60.42",
+              "70.68"
+            ],
+            "cell_ids": [
+              null,
+              null,
+              "T1.r40.c10",
+              "T1.r42.c10"
+            ]
+          },
+          {
+            "cells": [
+              "Qwen3-8B",
+              "3",
+              "77.84",
+              "79.19"
+            ],
+            "cell_ids": [
+              null,
+              null,
+              "T1.r35.c10",
+              "T1.r36.c10"
+            ]
+          }
+        ],
+        "highlight_rows": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "source": "表1"
+      }
+    },
+    {
+      "n": 13,
+      "kind": "board",
+      "narration": "OnQ截断更少，回答更短，重复性错误更少。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "截断已经少了很多，但还没有完全消失。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "平均截断率：Qwen3-1.7B 2比特",
+        "subtitle": "撞上token上限的回答百分比；越低越好。重复性错误：回答陷入循环重复同一段文字。",
+        "bars": [
+          {
+            "label": "EfficientQAT",
+            "value": "39.12",
+            "highlight": false,
+            "quote": "[T7.r6] EfficientQAT | 2/16 c1: 16.40 c2: 32.53 c3: 81.85 c4: 25.41 c5: 23.90 c6: 60.47 c7: 8.13 c8: 54.88 c9: 48.49 c10: 39.12",
+            "paper_label": "EfficientQAT | 2/16",
+            "cell": "T7.r6.c10"
+          },
+          {
+            "label": "BitDistiller",
+            "value": "46.28",
+            "highlight": false,
+            "quote": "[T7.r7] BitDistiller | 2/16 c1: 13.42 c2: 39.87 c3: 73.70 c4: 51.02 c5: 43.39 c6: 75.10 c7: 26.04 c8: 64.81 c9: 29.21 c10: 46.28",
+            "paper_label": "BitDistiller | 2/16",
+            "cell": "T7.r7.c10"
+          },
+          {
+            "label": "ReasoningQAT",
+            "value": "9.47",
+            "highlight": false,
+            "baseline": true,
+            "quote": "[T7.r8] ReasoningQAT | 2/16 c1: 0.30 c2: 8.33 c3: 28.52 c4: 4.67 c5: 4.41 c6: 24.83 c7: 0.38 c8: 4.55 c9: 9.24 c10: 9.47",
+            "paper_label": "ReasoningQAT | 2/16",
+            "cell": "T7.r8.c10"
+          },
+          {
+            "label": "OnQ",
+            "value": "3.86",
+            "highlight": true,
+            "quote": "[T7.r9] OnQ | 2/16 c1: 0.03 c2: 2.20 c3: 14.81 c4: 1.42 c5: 1.85 c6: 4.52 c7: 0.12 c8: 2.02 c9: 7.76 c10: 3.86",
+            "paper_label": "OnQ | 2/16",
+            "cell": "T7.r9.c10"
+          }
+        ],
+        "unit": "%",
+        "higher_is_better": false,
+        "source": "表7"
+      }
+    },
+    {
+      "n": 14,
+      "kind": "board",
+      "narration": "QAT：量化极低位运行时适配模型的训练方法。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "用自己的输出训练加上动态KL，是关键增益。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "MATH-500：Qwen3-1.7B 2比特",
+        "subtitle": "MATH-500：标准数学推理基准。FKL=前向KL；DKL=动态KL。准确率；越高越好。",
+        "bars": [
+          {
+            "label": "固定前向KL",
+            "value": "59.00",
+            "highlight": false,
+            "quote": "[T3.r1] Fixed-response FKL c1: 59.00 c2: 39.63 c3: 52.28",
+            "paper_label": "Fixed-response FKL",
+            "cell": "T3.r1.c1"
+          },
+          {
+            "label": "固定动态KL",
+            "value": "61.00",
+            "highlight": false,
+            "baseline": true,
+            "quote": "[T3.r2] Fixed-response DKL c1: 61.00 c2: 42.07 c3: 52.68",
+            "paper_label": "Fixed-response DKL",
+            "cell": "T3.r2.c1"
+          },
+          {
+            "label": "同策略动态KL",
+            "value": "69.40",
+            "highlight": true,
+            "quote": "[T3.r3] On-policy DKL (OnQ) c1: 69.40 c2: 48.78 c3: 55.75",
+            "paper_label": "On-policy DKL (OnQ)",
+            "cell": "T3.r3.c1"
+          }
+        ],
+        "unit": "%",
+        "higher_is_better": true,
+        "source": "表3"
+      }
+    },
+    {
+      "n": 15,
+      "kind": "board",
+      "narration": "前向KL和反向KL都是单向损失函数。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "在这项基准上，平衡修正胜过单向损失。"
+        }
+      ],
+      "board": {
+        "kind": "bar",
+        "title": "MATH-500：同策略目标函数",
+        "subtitle": "Qwen3-1.7B 2比特；越高越好。从共享冷启动开始400步。FKL：前向KL损失。RKL：反向KL损失。",
+        "bars": [
+          {
+            "label": "RKL",
+            "value": "63.00",
+            "highlight": false,
+            "quote": "[T4.r2] Vanilla OPD | RKL c1: 63.00 c2: 10.98 c3: 48.18",
+            "paper_label": "Vanilla OPD | RKL",
+            "cell": "T4.r2.c1"
+          },
+          {
+            "label": "FKL",
+            "value": "66.20",
+            "highlight": false,
+            "baseline": true,
+            "quote": "[T4.r4] GKD | FKL c1: 66.20 c2: 11.59 c3: 48.82",
+            "paper_label": "GKD | FKL",
+            "cell": "T4.r4.c1"
+          },
+          {
+            "label": "动态KL",
+            "value": "67.20",
+            "highlight": true,
+            "quote": "[T4.r6] OnQ | Dynamic KL c1: 67.20 c2: 10.98 c3: 49.58",
+            "paper_label": "OnQ | Dynamic KL",
+            "cell": "T4.r6.c1"
+          }
+        ],
+        "unit": "%",
+        "higher_is_better": true,
+        "source": "表4"
+      }
+    },
+    {
+      "n": 16,
+      "kind": "board",
+      "narration": "开头的示例前缀，来自论文的校准诊断。",
+      "dialogue": [
+        {
+          "speaker": "kumo",
+          "text": "动态KL把低估拉高、高估压低，向老师模型靠拢。"
+        }
+      ],
+      "board": {
+        "kind": "diagram",
+        "title": "动态KL修正方向",
+        "subtitle": "p=老师模型概率，q=学生模型概率",
+        "elements": [
+          {
+            "type": "text",
+            "tone": "grey",
+            "text": "老师 p",
+            "x": 60.0,
+            "y": 80.0,
+            "size": 36.0,
+            "anchor": "start"
+          },
+          {
+            "type": "text",
+            "tone": "blue",
+            "text": "学生 q 之前",
+            "x": 320.0,
+            "y": 80.0,
+            "size": 36.0,
+            "anchor": "start"
+          },
+          {
+            "type": "text",
+            "tone": "red",
+            "text": "学生 q 修正示意",
+            "x": 720.0,
+            "y": 80.0,
+            "size": 36.0,
+            "anchor": "start"
+          },
+          {
+            "type": "arrow",
+            "tone": "grey",
+            "points": [
+              [
+                60.0,
+                520.0
+              ],
+              [
+                1140.0,
+                520.0
+              ]
+            ],
+            "heads": "end"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 190.0,
+            "y": 250.0,
+            "w": 70.0,
+            "h": 270.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 280.0,
+            "y": 430.0,
+            "w": 70.0,
+            "h": 90.0,
+            "fill": "none",
+            "dashed": true
+          },
+          {
+            "type": "box",
+            "tone": "red",
+            "x": 370.0,
+            "y": 280.0,
+            "w": 70.0,
+            "h": 240.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 510.0,
+            "y": 280.0,
+            "w": 70.0,
+            "h": 240.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 600.0,
+            "y": 380.0,
+            "w": 70.0,
+            "h": 140.0,
+            "fill": "none",
+            "dashed": true
+          },
+          {
+            "type": "box",
+            "tone": "red",
+            "x": 690.0,
+            "y": 300.0,
+            "w": 70.0,
+            "h": 220.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "grey",
+            "x": 830.0,
+            "y": 350.0,
+            "w": 70.0,
+            "h": 170.0,
+            "fill": "tint"
+          },
+          {
+            "type": "box",
+            "tone": "blue",
+            "x": 920.0,
+            "y": 250.0,
+            "w": 70.0,
+            "h": 270.0,
+            "fill": "none",
+            "dashed": true
+          },
+          {
+            "type": "box",
+            "tone": "red",
+            "x": 1010.0,
+            "y": 340.0,
+            "w": 70.0,
+            "h": 180.0,
+            "fill": "tint"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "a",
+            "bold": true,
+            "x": 315.0,
+            "y": 550.0,
+            "size": 40.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "two",
+            "bold": true,
+            "x": 635.0,
+            "y": 550.0,
+            "size": 40.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "text",
+            "tone": "ink",
+            "text": "一些",
+            "bold": true,
+            "x": 955.0,
+            "y": 550.0,
+            "size": 40.0,
+            "anchor": "middle"
+          },
+          {
+            "type": "arrow",
+            "tone": "red",
+            "points": [
+              [
+                350.0,
+                430.0
+              ],
+              [
+                370.0,
+                280.0
+              ]
+            ],
+            "heads": "end"
+          },
+          {
+            "type": "arrow",
+            "tone": "red",
+            "points": [
+              [
+                670.0,
+                380.0
+              ],
+              [
+                690.0,
+                300.0
+              ]
+            ],
+            "heads": "end"
+          },
+          {
+            "type": "arrow",
+            "tone": "red",
+            "points": [
+              [
+                990.0,
+                250.0
+              ],
+              [
+                1010.0,
+                340.0
+              ]
+            ],
+            "heads": "end"
+          }
+        ],
+        "brief": "Shows updated bar pairs: 'a' and 'two' student bars are much taller; 'some' student bar is much shorter. The mismatch is closed.",
+        "designed_for": "8f4c3e13fe4d"
+      }
+    },
+    {
+      "n": 17,
+      "kind": "scene",
+      "narration": "OnQ在相应设置中：MATH-500为2.4%，AIME重复错误为零。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "Qwen3-1.7B 2比特8K以上重复率从21.1%降到约1%，仅用100步。"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 18,
+      "kind": "scene",
+      "narration": "这是本文实验覆盖的范围。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "只在Qwen3系列上测试过，对吧？"
+        },
+        {
+          "speaker": "papi",
+          "text": "没错。没有测试其他模型家族。"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 19,
+      "kind": "scene",
+      "narration": "BF16：BFloat16，一种用于激活的16位浮点数格式。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "只有2/3比特权重，BF16激活？"
+        },
+        {
+          "speaker": "papi",
+          "text": "是的。而且只用了列出的九项基准。"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 20,
+      "kind": "scene",
+      "narration": "在测试过的设置中，论文兑现了它的主张。",
+      "dialogue": [
+        {
+          "speaker": "nezu",
+          "text": "好吧。你赢了浆果挞。结果站得住。"
+        },
+        {
+          "speaker": "kumo",
+          "text": "谢啦！要不要分你一半？"
+        }
+      ],
+      "board": null
+    },
+    {
+      "n": 21,
+      "kind": "board",
+      "narration": "最终要点。",
+      "dialogue": [
+        {
+          "speaker": "papi",
+          "text": "在模型实际走的路径上训练它。"
+        }
+      ],
+      "board": {
+        "kind": "list",
+        "title": "论文证明了什么",
+        "items": [
+          "QAT旨在恢复压缩后极低位大模型的推理能力。",
+          "旧QAT只用固定的现成答案训练",
+          "旧模型长任务失败，token耗尽",
+          "两大缺陷：错配+双向误差",
+          "OnQ：提出的极低位恢复流程",
+          "OnQ将Qwen3-8B 2比特平均分提升10.26分，超越最强基线。"
+        ],
+        "checked": [
+          2,
+          5
+        ]
+      }
+    }
+  ]
+}
